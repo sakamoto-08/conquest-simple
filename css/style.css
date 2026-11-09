@@ -26,6 +26,14 @@ h1 {
   width: min(100%, 420px);
 }
 
+.status-host {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #fffdf8;
+  border: 2px solid #3e3424;
+  font-weight: 700;
+}
+
 /* 列数は game.js が --map-size に入れる。3×3 なら 3。 */
 .map-grid {
   display: grid;
@@ -39,21 +47,53 @@ h1 {
 .map-cell {
   aspect-ratio: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  font: inherit;
+  color: inherit;
   background: #fbf6ea;
   border: 2px solid #3e3424;
   box-shadow: inset 0 0 0 4px #e6d8b4;
+  cursor: pointer;
+}
+
+.map-cell:hover:not(:disabled) {
+  background: #fffdf8;
+}
+
+.map-cell:focus-visible {
+  outline: 3px solid #8a5a12;
+  outline-offset: 2px;
+}
+
+.map-cell:disabled {
+  opacity: 1;
+  color: inherit;
+  cursor: default;
 }
 
 .map-cell.is-revealed {
-  background: #f0e2b6;
+  background: #e4d3a0;
+  box-shadow: inset 0 0 0 4px #c9b27a;
 }
 
 .map-cell-label {
   font-size: 1.75rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.map-cell-mark {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 /* 戦闘結果などを出すまで、空のログは高さを持たない。 */
@@ -67,4 +107,12 @@ h1 {
   background: #fffdf8;
   border: 2px solid #3e3424;
   line-height: 1.5;
+}
+
+.log-host[data-result="win"] {
+  background: #f3f6e4;
+}
+
+.log-host[data-result="lose"] {
+  background: #f8ece6;
 }

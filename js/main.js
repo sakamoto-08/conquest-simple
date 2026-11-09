@@ -1,10 +1,10 @@
 /**
  * main.js
- * 起動口。ページ読み込み時に初期 state を作り、マップを #app へ出す。
+ * 起動とクリック。
  *
- * 派遣や戦闘を足すときは、ここで保持している game を使う。
- *   game.state.map[row][col] を更新し、game.renderMap() で描き直す。
- *   結果の一文は game.renderLog('...') でログ領域へ出せる。
+ * マスは戦闘のたびに renderMap() で作り直される。
+ * listener は #app に1つだけ付け、押された .map-cell の data-row / data-col を読む。
+ * 勝敗とゴールドの更新は game.dispatch() に任せる。
  */
 (function () {
   'use strict';
@@ -14,4 +14,16 @@
 
   /* 次の処理から同じ state を触れるように残す。 */
   ConquestGame.current = game;
+
+  app.addEventListener('click', function (event) {
+    const cellElement = event.target.closest('.map-cell');
+    if (!cellElement || !app.contains(cellElement)) {
+      return;
+    }
+
+    game.dispatch(
+      Number(cellElement.dataset.row),
+      Number(cellElement.dataset.col)
+    );
+  });
 })();

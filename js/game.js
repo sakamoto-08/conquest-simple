@@ -1,10 +1,14 @@
 /**
  * game.js
- * マップの描画。
+ * マップの描画と、マスへの派遣。
  *
- * データは ConquestData、起動は main.js が担当する。
- * このファイルは state を画面へ反映するだけにする。
- * 派遣や戦闘で state が変わったら renderMap() を呼べば、同じ手順で描き直せる。
+ * データは ConquestData、クリックの受け取りは main.js が担当する。
+ * 派遣で state が変わったら renderMap() と renderLog() で画面を追従させる。
+ *
+ * 戦闘に出すユニットは getDispatchUnit() だけが決める。
+ * 今は所持カードの先頭1枚。編成は player.formation にカード配列を入れれば、
+ * 戦闘力の合計としてそのまま resolveBattle に渡せる。
+ * レベルはカードに level が付いたとき、表示名へ足す。
  *
  * 公開 API は globalThis.ConquestGame。
  */
@@ -33,27 +37,94 @@
   }
 
   /**
+   * カードの表示名。level が無いあいだは名前だけ。
+   * @param {{ name: string, level?: number }} card
+   * @returns {string}
+   */
+  function formatCardName(card) {
+    if (card.level == null) {
+      return card.name;
+    }
+    return card.name + ' Lv.' + card.level;
+  }
+
+  /**
+   * カード1枚、または編成配列を、ログ用の名前にする。
+   * @param {object|object[]} unit
+   * @returns {string}
+   */
+  function formatUnitName(unit) {
+    const cards = Array.isArray(unit) ? unit : [unit];
+    return cards.map(formatCardName).join('・');
+  }
+
+  /**
+   * 今回派遣するユニット。
+   * formation に1枚以上あればそれを優先する。無ければ所持の先頭。
+   * 戻り値はそのまま resolveBattle に渡せる。
+   *
+   * @param {{ cards: object[], formation?: object[] }} player
+   * @returns {object|object[]}
+   */
+  function getDispatchUnit(player) {
+    if (Array.isArray(player.formation) && player.formation.length > 0) {
+      return player.formation;
+    }
+    const card = player.cards[0];
+    if (!card) {
+      throw new Error('派遣できるカードがありません');
+    }
+    return card;
+  }
+
+  /**
+   * 戦闘ログの一文。勝敗、獲得ゴールド、その時点の所持を出す。
+   * @param {{ unit: object|object[], enemy: { name: string }, battle: { result: string, rewardGold: number } }} outcome
+   * @param {{ gold: number }} player
+   * @returns {string}
+   */
+  function formatBattleLog(outcome, player) {
+    const unitName = formatUnitName(outcome.unit);
+    const enemyName = outcome.enemy.name;
+    const held = '所持ゴールドは' + player.gold + '。';
+
+    if (outcome.battle.result === 'win') {
+      return unitName + 'が' + enemyName + 'に勝った。' +
+        outcome.battle.rewardGold + 'ゴールドを獲得した。' + held;
+    }
+    return unitName + 'は' + enemyName + 'に敗れた。ゴールドは得られなかった。' + held;
+  }
+
+  /**
    * マス1つ分の要素。
-   * クリックはまだ付けない。行と列は data-row / data-col に残してあるので、
-   * 派遣を足すときはこの要素へ listener を付けるだけでマスを特定できる。
+   * 未探索は button。探索済みは disabled にして、再クリックできないようにする。
+   * 行と列は data-row / data-col。クリック位置の特定は main.js が行う。
    *
    * @param {{ gold: number, isRevealed: boolean, enemy: object|null }} cell
    * @param {number} row
    * @param {number} col
-   * @returns {HTMLElement}
+   * @returns {HTMLButtonElement}
    */
   function createCellElement(cell, row, col) {
-    const element = document.createElement('div');
+    const element = document.createElement('button');
+    element.type = 'button';
     element.className = 'map-cell';
     element.classList.add(cell.isRevealed ? 'is-revealed' : 'is-hidden');
     element.dataset.row = String(row);
     element.dataset.col = String(col);
-    element.setAttribute('role', 'gridcell');
+    element.disabled = cell.isRevealed;
 
     const label = document.createElement('span');
     label.className = 'map-cell-label';
     label.textContent = formatCellLabel(cell);
     element.appendChild(label);
+
+    if (cell.isRevealed) {
+      const mark = document.createElement('span');
+      mark.className = 'map-cell-mark';
+      mark.textContent = '済';
+      element.appendChild(mark);
+    }
 
     return element;
   }
@@ -68,7 +139,6 @@
     const grid = document.createElement('div');
     grid.className = 'map-grid';
     grid.style.setProperty('--map-size', String(size));
-    grid.setAttribute('role', 'grid');
     grid.setAttribute('aria-label', size + '×' + size + 'のマップ');
 
     map.forEach(function (row, rowIndex) {
@@ -82,13 +152,18 @@
 
   /**
    * 画面の枠。
+   * [data-region="status"] … 派遣カードと所持ゴールド。
    * [data-region="map"] … マップ。再描画で中身だけ入れ替える。
-   * [data-region="log"] … 戦闘結果などをあとから出す場所。空のあいだは表示しない。
+   * [data-region="log"] … 戦闘結果。空のあいだは表示しない。
    * @returns {HTMLElement}
    */
   function createBoardElement() {
     const board = document.createElement('div');
     board.className = 'board';
+
+    const statusHost = document.createElement('div');
+    statusHost.className = 'status-host';
+    statusHost.dataset.region = 'status';
 
     const mapHost = document.createElement('div');
     mapHost.className = 'map-host';
@@ -99,6 +174,7 @@
     logHost.dataset.region = 'log';
     logHost.setAttribute('aria-live', 'polite');
 
+    board.appendChild(statusHost);
     board.appendChild(mapHost);
     board.appendChild(logHost);
     return board;
@@ -118,27 +194,88 @@
   }
 
   /**
+   * 所持ゴールドと、いま派遣できるカード名を出す。
+   * @param {HTMLElement} root
+   * @param {{ gold: number, cards: object[], formation?: object[] }} player
+   */
+  function renderStatus(root, player) {
+    const statusHost = root.querySelector('[data-region="status"]');
+    if (!statusHost) {
+      throw new Error('ステータスの描画先がありません');
+    }
+    const unitName = formatUnitName(getDispatchUnit(player));
+    statusHost.textContent = '派遣: ' + unitName + '　所持ゴールド ' + player.gold;
+  }
+
+  /**
    * 戦闘結果などの一文をログ領域へ出す。空文字なら領域を空に戻す。
+   * result は 'win' か 'lose'。色分けにだけ使う。
+   *
    * @param {HTMLElement} root
    * @param {string} message
+   * @param {'win'|'lose'} [result]
    */
-  function renderLog(root, message) {
+  function renderLog(root, message, result) {
     const logHost = root.querySelector('[data-region="log"]');
     if (!logHost) {
       throw new Error('ログの描画先がありません');
     }
     logHost.textContent = message || '';
+    if (result) {
+      logHost.dataset.result = result;
+    } else {
+      delete logHost.dataset.result;
+    }
+  }
+
+  /**
+   * 1マスへ派遣して戦闘する。
+   * 探索済みなら何も変えず null を返す。敗北でもマスはそのままなので、再クリックできる。
+   * 勝利時だけ isRevealed を立て、獲得ゴールドを財布へ足す。
+   * rewardGold にはマスのゴールドが既に含まれている。ここで cell.gold は足さない。
+   *
+   * @param {{ player: object, map: object[][] }} state
+   * @param {number} row
+   * @param {number} col
+   * @returns {null|{ unit: object|object[], enemy: object, battle: object, cell: object }}
+   */
+  function dispatchToCell(state, row, col) {
+    const line = state.map[row];
+    const cell = line && line[col];
+    if (!cell || cell.isRevealed) {
+      return null;
+    }
+
+    const unit = getDispatchUnit(state.player);
+    const enemy = globalThis.ConquestData.createRandomEnemy();
+    const battle = globalThis.ConquestData.resolveBattle(unit, enemy, {
+      cellGold: cell.gold,
+    });
+
+    if (battle.result === 'win') {
+      cell.enemy = enemy;
+      cell.isRevealed = true;
+      state.player.gold += battle.rewardGold;
+    }
+
+    return {
+      unit: unit,
+      enemy: enemy,
+      battle: battle,
+      cell: cell,
+    };
   }
 
   /**
    * 初期 state を作り、#app にマップを出す。
-   * 戻り値の state を更新したあと renderMap() / renderLog() を呼ぶと画面が追従する。
+   * dispatch(row, col) が戦闘、再描画、ログ更新まで行う。
    *
    * @param {HTMLElement} root
    * @returns {{
    *   state: { player: object, map: object[][] },
    *   renderMap: () => void,
-   *   renderLog: (message: string) => void
+   *   renderLog: (message: string, result?: string) => void,
+   *   dispatch: (row: number, col: number) => object|null
    * }}
    */
   function start(root) {
@@ -151,6 +288,7 @@
 
     const state = globalThis.ConquestData.createInitialState();
     root.replaceChildren(createBoardElement());
+    renderStatus(root, state.player);
     renderMap(root, state.map);
 
     return {
@@ -158,8 +296,18 @@
       renderMap: function () {
         renderMap(root, state.map);
       },
-      renderLog: function (message) {
-        renderLog(root, message);
+      renderLog: function (message, result) {
+        renderLog(root, message, result);
+      },
+      dispatch: function (row, col) {
+        const outcome = dispatchToCell(state, row, col);
+        if (!outcome) {
+          return null;
+        }
+        renderMap(root, state.map);
+        renderStatus(root, state.player);
+        renderLog(root, formatBattleLog(outcome, state.player), outcome.battle.result);
+        return outcome;
       },
     };
   }
