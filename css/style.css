@@ -104,13 +104,17 @@ h1 {
   padding: 12px 14px;
   background: #fffdf8;
   border: 2px solid #3e3424;
+  border-left-width: 6px;
+  font-weight: 700;
   line-height: 1.5;
 }
 
 .log-host[data-result="win"] {
   background: #f3f6e4;
+  border-left-color: #5d7a32;
 }
 
 .log-host[data-result="lose"] {
   background: #f8ece6;
+  border-left-color: #8d4d3a;
 }

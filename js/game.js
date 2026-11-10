@@ -80,7 +80,10 @@
   }
 
   /**
-   * 戦闘ログの一文。勝敗、獲得ゴールド、その時点の所持を出す。
+   * 戦闘ログの一文。先頭で勝敗を出し、獲得と所持を短く続ける。
+   * 勝利: Victory! ゴブリンがオークを倒した。+28 Gold（所持: 28）
+   * 敗北: Defeated... ゴブリンはオークに敗れた。（所持: 0）
+   *
    * @param {{ unit: object|object[], enemy: { name: string }, battle: { result: string, rewardGold: number } }} outcome
    * @param {{ gold: number }} player
    * @returns {string}
@@ -88,13 +91,13 @@
   function formatBattleLog(outcome, player) {
     const unitName = formatUnitName(outcome.unit);
     const enemyName = outcome.enemy.name;
-    const held = '所持ゴールドは' + player.gold + '。';
+    const held = '（所持:\u00A0' + player.gold + '）';
 
     if (outcome.battle.result === 'win') {
-      return unitName + 'が' + enemyName + 'に勝った。' +
-        outcome.battle.rewardGold + 'ゴールドを獲得した。' + held;
+      return 'Victory! ' + unitName + 'が' + enemyName + 'を倒した。+' +
+        outcome.battle.rewardGold + '\u00A0Gold' + held;
     }
-    return unitName + 'は' + enemyName + 'に敗れた。ゴールドは得られなかった。' + held;
+    return 'Defeated... ' + unitName + 'は' + enemyName + 'に敗れた。' + held;
   }
 
   /**
