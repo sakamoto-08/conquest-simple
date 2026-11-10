@@ -1,6 +1,6 @@
 /**
  * マップ表示の最低限の見た目。
- * マスの中身（数値か「？」か）は game.js が決める。ここは枠と配置だけを持つ。
+ * マスの中身（Void / Claimed）は game.js が決める。ここは枠と配置だけを持つ。
  */
 
 body {
@@ -85,15 +85,13 @@ h1 {
 }
 
 .map-cell-label {
-  font-size: 1.75rem;
+  max-width: 100%;
+  padding: 0 6px;
+  font-size: clamp(0.95rem, 3.4vw, 1.15rem);
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.map-cell-mark {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  text-align: center;
 }
 
 /* 戦闘結果などを出すまで、空のログは高さを持たない。 */

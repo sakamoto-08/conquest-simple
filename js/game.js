@@ -16,11 +16,10 @@
   'use strict';
 
   /**
-   * 未探索マスの出し方。
-   * true  … 隠したゴールドの数値をそのまま出す（今の確認用）。
-   * false … 未探索は「？」。探索済み（isRevealed）のマスだけ数値を出す。
+   * 未探索マスに隠したゴールドを数値で出すかどうか。
+   * false のときは未探索を "Void" にする。探索済みは常に "Claimed"。
    */
-  const SHOW_HIDDEN_GOLD = true;
+  const SHOW_HIDDEN_GOLD = false;
 
   /**
    * マスに出す文字列。
@@ -30,10 +29,13 @@
    * @returns {string}
    */
   function formatCellLabel(cell) {
-    if (!cell.isRevealed && !SHOW_HIDDEN_GOLD) {
-      return '？';
+    if (cell.isRevealed) {
+      return 'Claimed';
     }
-    return String(cell.gold);
+    if (SHOW_HIDDEN_GOLD) {
+      return String(cell.gold);
+    }
+    return 'Void';
   }
 
   /**
@@ -97,7 +99,7 @@
 
   /**
    * マス1つ分の要素。
-   * 未探索は button。探索済みは disabled にして、再クリックできないようにする。
+   * 未探索は button で "Void"。探索済みは "Claimed" とし、disabled にして再クリックできないようにする。
    * 行と列は data-row / data-col。クリック位置の特定は main.js が行う。
    *
    * @param {{ gold: number, isRevealed: boolean, enemy: object|null }} cell
@@ -118,13 +120,6 @@
     label.className = 'map-cell-label';
     label.textContent = formatCellLabel(cell);
     element.appendChild(label);
-
-    if (cell.isRevealed) {
-      const mark = document.createElement('span');
-      mark.className = 'map-cell-mark';
-      mark.textContent = '済';
-      element.appendChild(mark);
-    }
 
     return element;
   }
