@@ -32,6 +32,7 @@ h1 {
   background: #fffdf8;
   border: 2px solid #3e3424;
   font-weight: 700;
+  line-height: 1.5;
 }
 
 /* 列数は game.js が --map-size に入れる。3×3 なら 3。 */

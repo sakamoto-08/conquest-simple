@@ -200,7 +200,12 @@
   }
 
   /**
-   * 所持ゴールドと、いま派遣できるカード名を出す。
+   * 所持ゴールドと、いま派遣できるカードを出す。
+   * 名前は formatUnitName、出すユニットは getDispatchUnit に任せる。
+   * 戦闘力はカードの power の合計。1枚ならその値、編成なら合算で、戦闘判定と同じ。
+   * 例: 派遣: ゴブリン (Power 10)　所持ゴールド 120
+   *     派遣: ゴブリン・オーク (Power 30)　所持ゴールド 120
+   *
    * @param {HTMLElement} root
    * @param {{ gold: number, cards: object[], formation?: object[] }} player
    */
@@ -209,8 +214,15 @@
     if (!statusHost) {
       throw new Error('ステータスの描画先がありません');
     }
-    const unitName = formatUnitName(getDispatchUnit(player));
-    statusHost.textContent = '派遣: ' + unitName + '　所持ゴールド ' + player.gold;
+
+    const unit = getDispatchUnit(player);
+    const cards = Array.isArray(unit) ? unit : [unit];
+    const power = cards.reduce(function (sum, card) {
+      return sum + card.power;
+    }, 0);
+
+    statusHost.textContent =
+      '派遣: ' + formatUnitName(unit) + ' (Power ' + power + ')　所持ゴールド ' + player.gold;
   }
 
   /**
