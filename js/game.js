@@ -152,6 +152,7 @@
    * 画面の枠。
    * [data-region="status"] … 派遣カードと所持ゴールド。
    * [data-region="map"] … マップ。再描画で中身だけ入れ替える。
+   * [data-action="reset"] … 初期状態へ戻すボタン。押す処理は main.js。
    * [data-region="log"] … 戦闘結果。空のあいだは表示しない。
    * @returns {HTMLElement}
    */
@@ -167,6 +168,12 @@
     mapHost.className = 'map-host';
     mapHost.dataset.region = 'map';
 
+    const resetButton = document.createElement('button');
+    resetButton.type = 'button';
+    resetButton.className = 'reset-button';
+    resetButton.dataset.action = 'reset';
+    resetButton.textContent = 'Reset';
+
     const logHost = document.createElement('div');
     logHost.className = 'log-host';
     logHost.dataset.region = 'log';
@@ -174,6 +181,7 @@
 
     board.appendChild(statusHost);
     board.appendChild(mapHost);
+    board.appendChild(resetButton);
     board.appendChild(logHost);
     return board;
   }
@@ -267,13 +275,18 @@
   /**
    * 初期 state を作り、#app にマップを出す。
    * dispatch(row, col) が戦闘、再描画、ログ更新まで行う。
+   * reset() は createInitialState で盤面を作り直し、表示を初期状態へ戻す。
+   *
+   * state は戻り値のプロパティとして持ち、各操作はそこを読む。
+   * reset でオブジェクトを差し替えても、dispatch は新しい盤面を使う。
    *
    * @param {HTMLElement} root
    * @returns {{
    *   state: { player: object, map: object[][] },
    *   renderMap: () => void,
    *   renderLog: (message: string, result?: string) => void,
-   *   dispatch: (row: number, col: number) => object|null
+   *   dispatch: (row: number, col: number) => object|null,
+   *   reset: () => void
    * }}
    */
   function start(root) {
@@ -284,30 +297,40 @@
       throw new Error('ConquestData が読み込まれていません');
     }
 
-    const state = globalThis.ConquestData.createInitialState();
-    root.replaceChildren(createBoardElement());
-    renderStatus(root, state.player);
-    renderMap(root, state.map);
-
-    return {
-      state: state,
+    const game = {
+      state: globalThis.ConquestData.createInitialState(),
       renderMap: function () {
-        renderMap(root, state.map);
+        renderMap(root, game.state.map);
       },
       renderLog: function (message, result) {
         renderLog(root, message, result);
       },
       dispatch: function (row, col) {
-        const outcome = dispatchToCell(state, row, col);
+        const outcome = dispatchToCell(game.state, row, col);
         if (!outcome) {
           return null;
         }
-        renderMap(root, state.map);
-        renderStatus(root, state.player);
-        renderLog(root, formatBattleLog(outcome, state.player), outcome.battle.result);
+        renderMap(root, game.state.map);
+        renderStatus(root, game.state.player);
+        renderLog(root, formatBattleLog(outcome, game.state.player), outcome.battle.result);
         return outcome;
       },
+      /**
+       * 探索状況、所持ゴールド、戦闘ログを捨てて最初からにする。
+       * カードの初期所持も createInitialState の定義に従う。
+       */
+      reset: function () {
+        game.state = globalThis.ConquestData.createInitialState();
+        renderStatus(root, game.state.player);
+        renderMap(root, game.state.map);
+        renderLog(root, '');
+      },
     };
+
+    root.replaceChildren(createBoardElement());
+    renderStatus(root, game.state.player);
+    renderMap(root, game.state.map);
+    return game;
   }
 
   globalThis.ConquestGame = {

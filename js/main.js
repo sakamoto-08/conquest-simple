@@ -3,8 +3,9 @@
  * 起動とクリック。
  *
  * マスは戦闘のたびに renderMap() で作り直される。
- * listener は #app に1つだけ付け、押された .map-cell の data-row / data-col を読む。
- * 勝敗とゴールドの更新は game.dispatch() に任せる。
+ * listener は #app に1つだけ付け、押された要素で処理を分ける。
+ *   .map-cell            … game.dispatch()
+ *   [data-action="reset"] … game.reset()
  */
 (function () {
   'use strict';
@@ -16,6 +17,12 @@
   ConquestGame.current = game;
 
   app.addEventListener('click', function (event) {
+    const resetButton = event.target.closest('[data-action="reset"]');
+    if (resetButton && app.contains(resetButton)) {
+      game.reset();
+      return;
+    }
+
     const cellElement = event.target.closest('.map-cell');
     if (!cellElement || !app.contains(cellElement)) {
       return;
