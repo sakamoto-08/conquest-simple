@@ -95,7 +95,41 @@ h1 {
   text-align: center;
 }
 
-/* マップの直下。ログより上なので、戦闘結果が出ても位置がずれない。 */
+/* マップの直下。2枚並び。種類が増えてもこの枠にボタンを足す。 */
+.evolve-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.evolve-button {
+  min-height: 44px;
+  padding: 10px 8px;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: inherit;
+  background: #fffdf8;
+  border: 2px solid #3e3424;
+  cursor: pointer;
+}
+
+.evolve-button:hover:not(:disabled) {
+  background: #fff;
+}
+
+.evolve-button:focus-visible {
+  outline: 3px solid #8a5a12;
+  outline-offset: 2px;
+}
+
+.evolve-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 進化ボタンの下。ログより上なので、戦闘結果が出ても位置がずれない。 */
 .reset-button {
   display: block;
   width: 100%;
