@@ -62,6 +62,16 @@
   }
 
   /**
+   * 所持一覧の1行。名前のうしろに戦闘力を付ける。
+   * 例: ゴブリン (Power 10)
+   * @param {{ name: string, power: number, level?: number }} card
+   * @returns {string}
+   */
+  function formatOwnedCard(card) {
+    return formatCardName(card) + ' (Power ' + card.power + ')';
+  }
+
+  /**
    * カード1枚、または編成配列を、ログ用の名前にする。
    * @param {object|object[]} unit
    * @returns {string}
@@ -177,6 +187,7 @@
   /**
    * 画面の枠。
    * [data-region="status"] … 派遣カードと所持ゴールド。
+   * [data-region="cards"] … 所持カードの一覧。中身だけ入れ替える。
    * [data-region="map"] … マップ。再描画で中身だけ入れ替える。
    * [data-action="evolve"] … ゴールドでカードを追加するボタン。押す処理は main.js。
    * [data-action="reset"] … 初期状態へ戻すボタン。押す処理は main.js。
@@ -190,6 +201,20 @@
     const statusHost = document.createElement('div');
     statusHost.className = 'status-host';
     statusHost.dataset.region = 'status';
+
+    const cardsHost = document.createElement('section');
+    cardsHost.className = 'cards-host';
+    cardsHost.dataset.region = 'cards';
+
+    const cardsHeading = document.createElement('h2');
+    cardsHeading.className = 'cards-heading';
+    cardsHeading.textContent = '所持カード';
+
+    const cardsList = document.createElement('ul');
+    cardsList.className = 'cards-list';
+
+    cardsHost.appendChild(cardsHeading);
+    cardsHost.appendChild(cardsList);
 
     const mapHost = document.createElement('div');
     mapHost.className = 'map-host';
@@ -207,6 +232,7 @@
     logHost.setAttribute('aria-live', 'polite');
 
     board.appendChild(statusHost);
+    board.appendChild(cardsHost);
     board.appendChild(mapHost);
     board.appendChild(createEvolveElement());
     board.appendChild(resetButton);
@@ -277,6 +303,28 @@
   }
 
   /**
+   * 所持カードを上から順に出す。並びは player.cards の順。
+   * 進化で push したカードは末尾に足され、次の再描画で現れる。
+   *
+   * @param {HTMLElement} root
+   * @param {{ cards: object[] }} player
+   */
+  function renderCards(root, player) {
+    const list = root.querySelector('[data-region="cards"] .cards-list');
+    if (!list) {
+      throw new Error('所持カードの描画先がありません');
+    }
+
+    list.replaceChildren();
+    player.cards.forEach(function (card) {
+      const item = document.createElement('li');
+      item.className = 'cards-item';
+      item.textContent = formatOwnedCard(card);
+      list.appendChild(item);
+    });
+  }
+
+  /**
    * 所持ゴールドで買える進化だけ押せるようにする。
    * 足りないボタンは disabled。クリック自体も evolveCard 側で無視する。
    *
@@ -312,7 +360,7 @@
   }
 
   /**
-   * ステータスと進化ボタンを、今の所持に合わせる。
+   * ステータス、所持一覧、進化ボタンを、今の所持に合わせる。
    * 戦闘・進化・リセットのあとで呼ぶ。
    *
    * @param {HTMLElement} root
@@ -320,6 +368,7 @@
    */
   function refreshPlayer(root, player) {
     renderStatus(root, player);
+    renderCards(root, player);
     renderEvolve(root, player);
   }
 
