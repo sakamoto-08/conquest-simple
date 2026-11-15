@@ -55,13 +55,45 @@ h1 {
 }
 
 .cards-item {
-  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 6px;
+  font: inherit;
   font-weight: 700;
   line-height: 1.4;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 
-.cards-item + .cards-item {
+.cards-list li + li .cards-item {
   border-top: 1px solid #e6d8b4;
+}
+
+.cards-item:hover {
+  background: #f4efe2;
+}
+
+.cards-item:focus-visible {
+  outline: 3px solid #8a5a12;
+  outline-offset: -3px;
+}
+
+.cards-item.is-selected,
+.cards-item.is-selected:hover {
+  background: #e4d3a0;
+}
+
+.cards-item-mark {
+  flex: none;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
 }
 
 /* 列数は game.js が --map-size に入れる。3×3 なら 3。 */

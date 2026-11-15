@@ -6,8 +6,10 @@
  * 派遣で state が変わったら renderMap() と renderLog() で画面を追従させる。
  *
  * 戦闘に出すカードは getDispatchUnit() だけが決める。
- * 所持のうち power が一番高い1枚を派遣する。
- * 進化で cards に強いカードを足すと、次の派遣から自動で切り替わる。
+ * プレイヤーが所持一覧から選んだカードを派遣する。
+ * 未選択のときだけ、power が一番高い1枚を選んでおく。
+ * 選択は player.selectedIds に instanceId の配列で持つ。
+ * 今は1件だけ入れる。複数入れれば、そのまま編成として戦闘できる。
  * レベルはカードに level が付いたとき、表示名へ足す。
  *
  * 公開 API は globalThis.ConquestGame。
@@ -82,23 +84,102 @@
   }
 
   /**
-   * 今回派遣するカード。所持のうち power が最大の1枚。
-   * 同じ戦闘力なら、配列の先にあるカードを残す。
-   * 戻り値はそのまま resolveBattle に渡せる。
+   * 所持のうち power が最大の1枚。同じ値なら配列の先を残す。
+   * 選択がまだ無いときの初期値に使う。
    *
    * @param {{ cards: object[] }} player
    * @returns {object}
    */
-  function getDispatchUnit(player) {
-    if (!player.cards.length) {
-      throw new Error('派遣できるカードがありません');
-    }
+  function strongestCard(player) {
     return player.cards.reduce(function (strongest, card) {
       if (card.power > strongest.power) {
         return card;
       }
       return strongest;
     });
+  }
+
+  /**
+   * instanceId で所持カードを1枚取る。無ければ null。
+   * @param {{ cards: object[] }} player
+   * @param {number} instanceId
+   * @returns {object|null}
+   */
+  function findOwnedCard(player, instanceId) {
+    for (let i = 0; i < player.cards.length; i++) {
+      if (player.cards[i].instanceId === instanceId) {
+        return player.cards[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 派遣対象が所持に残っているか確認し、空なら最強の1枚を選ぶ。
+   * selectedIds は編成用の配列。今の操作では1件だけ入る。
+   *
+   * @param {{ cards: object[], selectedIds?: number[] }} player
+   */
+  function ensureSelection(player) {
+    if (!Array.isArray(player.selectedIds)) {
+      player.selectedIds = [];
+    }
+    player.selectedIds = player.selectedIds.filter(function (id) {
+      return findOwnedCard(player, id);
+    });
+    if (player.selectedIds.length === 0 && player.cards.length > 0) {
+      player.selectedIds = [strongestCard(player).instanceId];
+    }
+  }
+
+  /**
+   * そのカードが、いまの派遣対象に入っているか。
+   * @param {{ selectedIds?: number[] }} player
+   * @param {{ instanceId: number }} card
+   * @returns {boolean}
+   */
+  function isDispatchSelected(player, card) {
+    return Array.isArray(player.selectedIds) &&
+      player.selectedIds.indexOf(card.instanceId) !== -1;
+  }
+
+  /**
+   * 今回派遣するカード。選択中の1枚、または将来の編成配列。
+   * 戻り値はそのまま resolveBattle に渡せる。
+   *
+   * @param {{ cards: object[], selectedIds?: number[] }} player
+   * @returns {object|object[]}
+   */
+  function getDispatchUnit(player) {
+    ensureSelection(player);
+    const selected = player.cards.filter(function (card) {
+      return isDispatchSelected(player, card);
+    });
+    if (selected.length === 0) {
+      throw new Error('派遣できるカードがありません');
+    }
+    if (selected.length === 1) {
+      return selected[0];
+    }
+    return selected;
+  }
+
+  /**
+   * 派遣対象を、指定した所持カード1枚にする。
+   * 所持に無い id では何も変えない。
+   * 編成にするときは、この代入を配列への追加に変える。
+   *
+   * @param {{ cards: object[], selectedIds?: number[] }} player
+   * @param {number} instanceId
+   * @returns {object|null}
+   */
+  function selectDispatch(player, instanceId) {
+    const card = findOwnedCard(player, instanceId);
+    if (!card) {
+      return null;
+    }
+    player.selectedIds = [card.instanceId];
+    return card;
   }
 
   /**
@@ -304,10 +385,11 @@
 
   /**
    * 所持カードを上から順に出す。並びは player.cards の順。
+   * 各行はボタン。選択中は色と「選択中」で区別する。
    * 進化で push したカードは末尾に足され、次の再描画で現れる。
    *
    * @param {HTMLElement} root
-   * @param {{ cards: object[] }} player
+   * @param {{ cards: object[], selectedIds?: number[] }} player
    */
   function renderCards(root, player) {
     const list = root.querySelector('[data-region="cards"] .cards-list');
@@ -315,11 +397,35 @@
       throw new Error('所持カードの描画先がありません');
     }
 
+    ensureSelection(player);
     list.replaceChildren();
     player.cards.forEach(function (card) {
       const item = document.createElement('li');
-      item.className = 'cards-item';
-      item.textContent = formatOwnedCard(card);
+      const button = document.createElement('button');
+      const selected = isDispatchSelected(player, card);
+
+      button.type = 'button';
+      button.className = 'cards-item';
+      button.dataset.action = 'select-card';
+      button.dataset.instanceId = String(card.instanceId);
+      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      if (selected) {
+        button.classList.add('is-selected');
+      }
+
+      const name = document.createElement('span');
+      name.className = 'cards-item-name';
+      name.textContent = formatOwnedCard(card);
+      button.appendChild(name);
+
+      if (selected) {
+        const mark = document.createElement('span');
+        mark.className = 'cards-item-mark';
+        mark.textContent = '選択中';
+        button.appendChild(mark);
+      }
+
+      item.appendChild(button);
       list.appendChild(item);
     });
   }
@@ -367,6 +473,7 @@
    * @param {object} player
    */
   function refreshPlayer(root, player) {
+    ensureSelection(player);
     renderStatus(root, player);
     renderCards(root, player);
     renderEvolve(root, player);
@@ -435,6 +542,7 @@
    * 初期 state を作り、#app にマップを出す。
    * dispatch(row, col) が戦闘、再描画、ログ更新まで行う。
    * evolve(templateId) はゴールドでカードを1枚追加する。
+   * select(instanceId) は派遣するカードを切り替える。
    * reset() は createInitialState で盤面を作り直し、表示を初期状態へ戻す。
    *
    * state は戻り値のプロパティとして持ち、各操作はそこを読む。
@@ -447,6 +555,7 @@
    *   renderLog: (message: string, result?: string) => void,
    *   dispatch: (row: number, col: number) => object|null,
    *   evolve: (templateId: string) => object|null,
+   *   select: (instanceId: number) => object|null,
    *   reset: () => void
    * }}
    */
@@ -485,6 +594,21 @@
        */
       evolve: function (templateId) {
         const card = evolveCard(game.state.player, templateId);
+        if (!card) {
+          return null;
+        }
+        refreshPlayer(root, game.state.player);
+        return card;
+      },
+      /**
+       * 所持一覧で選んだ1枚を、次の派遣対象にする。
+       * ステータスと一覧の「選択中」を描き直す。
+       *
+       * @param {number} instanceId
+       * @returns {object|null}
+       */
+      select: function (instanceId) {
+        const card = selectDispatch(game.state.player, instanceId);
         if (!card) {
           return null;
         }
