@@ -23,7 +23,7 @@ h1 {
 }
 
 .board {
-  width: min(100%, 420px);
+  width: min(100%, 680px);
 }
 
 .status-host {
@@ -96,11 +96,15 @@ h1 {
   letter-spacing: 0.06em;
 }
 
-/* 列数は game.js が --map-size に入れる。3×3 なら 3。 */
+/* 列数は game.js が --map-size に入れる。狭い画面では横スクロールし、マスは 76px より小さくしない。 */
+.map-host {
+  overflow-x: auto;
+}
+
 .map-grid {
   display: grid;
-  grid-template-columns: repeat(var(--map-size, 3), minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(var(--map-size, 5), minmax(76px, 1fr));
+  gap: 8px;
   padding: 12px;
   background: #6f6246;
   border: 3px solid #3e3424;
@@ -114,7 +118,7 @@ h1 {
   justify-content: center;
   gap: 4px;
   width: 100%;
-  min-width: 0;
+  min-width: 76px;
   margin: 0;
   padding: 0;
   appearance: none;
@@ -148,8 +152,8 @@ h1 {
 
 .map-cell-label {
   max-width: 100%;
-  padding: 0 6px;
-  font-size: clamp(0.95rem, 3.4vw, 1.15rem);
+  padding: 0 4px;
+  font-size: clamp(0.8rem, 2.2vw, 1.05rem);
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: 0.01em;

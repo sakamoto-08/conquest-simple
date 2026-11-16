@@ -5,7 +5,7 @@
  * 画面や派遣の進行は game.js に任せ、このファイルは次だけを持つ。
  *   - カードのマスタ（テンプレート）
  *   - プレイヤーの初期所持
- *   - 3×3 マップの生成
+ *   - マップの生成（一辺は MAP_SIZE）
  *   - 戦闘力の比較と獲得ゴールドの計算
  *
  * カードは「テンプレート」と「インスタンス」を分けている。
@@ -19,8 +19,8 @@
 (function () {
   'use strict';
 
-  /** マップの一辺。3 なら 3×3。 */
-  const MAP_SIZE = 3;
+  /** マップの一辺。5 なら 5×5。 */
+  const MAP_SIZE = 5;
 
   /** マスに隠すゴールドの範囲（両端を含む）。 */
   const CELL_GOLD_MIN = 10;
@@ -164,7 +164,7 @@
   }
 
   /**
-   * 3×3 のマップ。map[row][col] でマスを取る。
+   * 一辺 MAP_SIZE のマップ。map[row][col] でマスを取る。
    * @param {number} [size]
    * @param {() => number} [random]
    * @returns {Cell[][]}
@@ -316,8 +316,8 @@
     assert(state.player.cards.length === 1, '初期所持は1枚');
     assert(state.player.cards[0].templateId === 'goblin', '初期カードはゴブリン');
     assert(state.player.cards[0].instanceId !== createCard('goblin').instanceId, 'インスタンスIDは重複しない');
-    assert(state.map.length === MAP_SIZE, 'マップは3行');
-    assert(state.map[0].length === MAP_SIZE, 'マップは3列');
+    assert(state.map.length === MAP_SIZE, 'マップは' + MAP_SIZE + '行');
+    assert(state.map[0].length === MAP_SIZE, 'マップは' + MAP_SIZE + '列');
 
     state.map.forEach(function (row) {
       row.forEach(function (cell) {

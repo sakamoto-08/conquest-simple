@@ -245,7 +245,7 @@
   }
 
   /**
-   * 3×3 のグリッド。列数はマップの行数から決める。
+   * マップのグリッド。列数はマップの行数から決める。
    * @param {Array<Array<object>>} map
    * @returns {HTMLElement}
    */
