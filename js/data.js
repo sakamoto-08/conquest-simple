@@ -72,6 +72,17 @@
     { templateId: 'dragon', weight: 15 },
   ];
 
+  /**
+   * マスの地形。weight の合計に対する比率が出現率になる。
+   * いまは同率。偏らせるときは weight だけを変える。
+   * 色分けや敵の出現条件は、まだこの表を見ない。
+   */
+  const TERRAIN_TABLE = [
+    { id: 'forest', name: '森', weight: 1 },
+    { id: 'wasteland', name: '荒野', weight: 1 },
+    { id: 'mountain', name: '山脈', weight: 1 },
+  ];
+
   /** インスタンスを一意に区別する連番。複数枚所持したときの識別子。 */
   let nextInstanceId = 1;
 
@@ -151,13 +162,40 @@
   }
 
   /**
+   * TERRAIN_TABLE から地形 id を1つ引く。
+   * ゴールド用の乱数とは別に1回振る。
+   *
+   * @param {() => number} [random]
+   * @returns {string}
+   */
+  function pickTerrain(random) {
+    const roll = random || Math.random;
+    const totalWeight = TERRAIN_TABLE.reduce(function (sum, entry) {
+      return sum + entry.weight;
+    }, 0);
+
+    let cursor = roll() * totalWeight;
+    for (let i = 0; i < TERRAIN_TABLE.length; i++) {
+      cursor -= TERRAIN_TABLE[i].weight;
+      if (cursor < 0) {
+        return TERRAIN_TABLE[i].id;
+      }
+    }
+
+    return TERRAIN_TABLE[TERRAIN_TABLE.length - 1].id;
+  }
+
+  /**
    * 未探索のマスを1つ作る。敵は派遣まで null。
+   * terrain は見た目や戦闘にはまだ使わない。
+   *
    * @param {() => number} [random]
    * @returns {Cell}
    */
   function createCell(random) {
     return {
       gold: randomInt(CELL_GOLD_MIN, CELL_GOLD_MAX, random),
+      terrain: pickTerrain(random),
       isRevealed: false,
       enemy: null,
     };
@@ -319,13 +357,21 @@
     assert(state.map.length === MAP_SIZE, 'マップは' + MAP_SIZE + '行');
     assert(state.map[0].length === MAP_SIZE, 'マップは' + MAP_SIZE + '列');
 
+    const terrainIds = TERRAIN_TABLE.map(function (entry) {
+      return entry.id;
+    });
     state.map.forEach(function (row) {
       row.forEach(function (cell) {
         assert(cell.gold >= CELL_GOLD_MIN && cell.gold <= CELL_GOLD_MAX, 'ゴールドは10〜50');
+        assert(terrainIds.indexOf(cell.terrain) !== -1, '地形は定義済みの種類');
         assert(cell.isRevealed === false, '初期状態は未探索');
         assert(cell.enemy === null, '敵は派遣まで未配置');
       });
     });
+
+    const forestCell = createCell(sequenceRandom([0, 0]));
+    assert(forestCell.gold === CELL_GOLD_MIN, '乱数0ではゴールド下限');
+    assert(forestCell.terrain === 'forest', '乱数0では表の先頭の地形');
 
     const goblin = createCard('goblin');
     const dragon = createCard('dragon');
@@ -406,6 +452,7 @@
     MAP_SIZE: MAP_SIZE,
     CARD_TEMPLATES: CARD_TEMPLATES,
     ENEMY_SPAWN_TABLE: ENEMY_SPAWN_TABLE,
+    TERRAIN_TABLE: TERRAIN_TABLE,
     createCard: createCard,
     createRandomEnemy: createRandomEnemy,
     createPlayer: createPlayer,
