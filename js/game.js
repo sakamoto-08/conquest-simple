@@ -218,11 +218,22 @@
   }
 
   /**
+   * 地形 id と CSS クラスの対応。色そのものは style.css が持つ。
+   * 地形を足すときは、ここへ1行足す。
+   */
+  const TERRAIN_CLASS = {
+    forest: 'terrain-forest',
+    wasteland: 'terrain-wasteland',
+    mountain: 'terrain-mountain',
+  };
+
+  /**
    * マス1つ分の要素。
    * 未探索は button で "Void"。探索済みは "Claimed" とし、disabled にして再クリックできないようにする。
+   * 地形クラスは Void でも Claimed でも付けたままにする。色の差は CSS が担当する。
    * 行と列は data-row / data-col。クリック位置の特定は main.js が行う。
    *
-   * @param {{ gold: number, isRevealed: boolean, enemy: object|null }} cell
+   * @param {{ gold: number, isRevealed: boolean, enemy: object|null, terrain?: string }} cell
    * @param {number} row
    * @param {number} col
    * @returns {HTMLButtonElement}
@@ -232,6 +243,9 @@
     element.type = 'button';
     element.className = 'map-cell';
     element.classList.add(cell.isRevealed ? 'is-revealed' : 'is-hidden');
+    if (TERRAIN_CLASS[cell.terrain]) {
+      element.classList.add(TERRAIN_CLASS[cell.terrain]);
+    }
     element.dataset.row = String(row);
     element.dataset.col = String(col);
     element.disabled = cell.isRevealed;

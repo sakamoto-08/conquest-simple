@@ -131,7 +131,7 @@ h1 {
 }
 
 .map-cell:hover:not(:disabled) {
-  background: #fffdf8;
+  filter: brightness(1.06);
 }
 
 .map-cell:focus-visible {
@@ -148,6 +148,41 @@ h1 {
 .map-cell.is-revealed {
   background: #e4d3a0;
   box-shadow: inset 0 0 0 4px #c9b27a;
+}
+
+/* 地形の地色。Claimed は同じ系統を一段沈め、金の内枠で探索済みと分かるようにする。 */
+.map-cell.terrain-forest {
+  background: #3e6b48;
+  color: #f4f1e6;
+  box-shadow: inset 0 0 0 4px #2f5438;
+}
+
+.map-cell.terrain-forest.is-revealed {
+  background: #2a4c34;
+  box-shadow: inset 0 0 0 4px #d9c78a;
+}
+
+.map-cell.terrain-wasteland {
+  background: #7a5a3c;
+  color: #f4f1e6;
+  box-shadow: inset 0 0 0 4px #5c422c;
+}
+
+.map-cell.terrain-wasteland.is-revealed {
+  background: #56402b;
+  box-shadow: inset 0 0 0 4px #d9c78a;
+}
+
+.map-cell.terrain-mountain {
+  background: #d2d6da;
+  color: #2c261c;
+  box-shadow: inset 0 0 0 4px #aeb4ba;
+}
+
+.map-cell.terrain-mountain.is-revealed {
+  background: #8e979f;
+  color: #1f1c16;
+  box-shadow: inset 0 0 0 4px #d9c78a;
 }
 
 .map-cell-label {
