@@ -219,7 +219,7 @@
 
   /**
    * 地形 id と CSS クラスの対応。色そのものは style.css が持つ。
-   * 地形を足すときは、ここへ1行足す。
+   * 地形を足すときは、ここへ1行足し、TERRAIN_ENGLISH にも同じ id を足す。
    */
   const TERRAIN_CLASS = {
     forest: 'terrain-forest',
@@ -228,9 +228,60 @@
   };
 
   /**
+   * 凡例に出す英語名。日本語名は ConquestData.TERRAIN_TABLE を使う。
+   * 地形を足すときは、TERRAIN_CLASS とここへ同じ id を足す。
+   */
+  const TERRAIN_ENGLISH = {
+    forest: 'Forest',
+    wasteland: 'Wasteland',
+    mountain: 'Mountain',
+  };
+
+  /**
+   * マップの上に置く地形の凡例。
+   * 色見本はマスと同じクラスを付ける。色の値は style.css が1か所で持つ。
+   * マップ本体は派遣のたびに作り直すが、凡例は静的なのでここだけで作る。
+   * @returns {HTMLElement}
+   */
+  function createTerrainLegendElement() {
+    const table = (globalThis.ConquestData && globalThis.ConquestData.TERRAIN_TABLE) || [
+      { id: 'forest', name: '森' },
+      { id: 'wasteland', name: '荒野' },
+      { id: 'mountain', name: '山脈' },
+    ];
+
+    const legend = document.createElement('ul');
+    legend.className = 'terrain-legend';
+    legend.setAttribute('aria-label', '地形の凡例');
+
+    table.forEach(function (entry) {
+      const item = document.createElement('li');
+      item.className = 'terrain-legend-item';
+
+      const swatch = document.createElement('span');
+      swatch.className = 'terrain-legend-swatch';
+      if (TERRAIN_CLASS[entry.id]) {
+        swatch.classList.add(TERRAIN_CLASS[entry.id]);
+      }
+      swatch.setAttribute('aria-hidden', 'true');
+
+      const name = document.createElement('span');
+      name.className = 'terrain-legend-name';
+      name.textContent = entry.name + ' ' + (TERRAIN_ENGLISH[entry.id] || entry.id);
+
+      item.appendChild(swatch);
+      item.appendChild(name);
+      legend.appendChild(item);
+    });
+
+    return legend;
+  }
+
+  /**
    * マス1つ分の要素。
    * 未探索は button で "Void"。探索済みは "Claimed" とし、disabled にして再クリックできないようにする。
-   * 地形クラスは Void でも Claimed でも付けたままにする。色の差は CSS が担当する。
+   * 地形クラスは Void でも Claimed でも付けたままにする。
+   * 未攻略を暗く、攻略済みを明るくする差は CSS が担当する。
    * 行と列は data-row / data-col。クリック位置の特定は main.js が行う。
    *
    * @param {{ gold: number, isRevealed: boolean, enemy: object|null, terrain?: string }} cell
@@ -283,6 +334,7 @@
    * 画面の枠。
    * [data-region="status"] … 派遣カードと所持ゴールド。
    * [data-region="cards"] … 所持カードの一覧。中身だけ入れ替える。
+   * .terrain-legend … 地形の色と名前。静的なので再描画しない。
    * [data-region="map"] … マップ。再描画で中身だけ入れ替える。
    * [data-action="evolve"] … ゴールドでカードを追加するボタン。押す処理は main.js。
    * [data-action="reset"] … 初期状態へ戻すボタン。押す処理は main.js。
@@ -328,6 +380,7 @@
 
     board.appendChild(statusHost);
     board.appendChild(cardsHost);
+    board.appendChild(createTerrainLegendElement());
     board.appendChild(mapHost);
     board.appendChild(createEvolveElement());
     board.appendChild(resetButton);

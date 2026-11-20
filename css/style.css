@@ -146,46 +146,97 @@ h1 {
 }
 
 .map-cell.is-revealed {
-  background: #e4d3a0;
-  box-shadow: inset 0 0 0 4px #c9b27a;
-}
-
-/* 地形の地色。Claimed は同じ系統を一段沈め、金の内枠で探索済みと分かるようにする。 */
-.map-cell.terrain-forest {
-  background: #3e6b48;
-  color: #f4f1e6;
-  box-shadow: inset 0 0 0 4px #2f5438;
-}
-
-.map-cell.terrain-forest.is-revealed {
-  background: #2a4c34;
-  box-shadow: inset 0 0 0 4px #d9c78a;
-}
-
-/* 荒野は未探索も探索済みも地色は #c2a57a。明るい地色なので文字は濃くする。 */
-.map-cell.terrain-wasteland {
-  background: #c2a57a;
+  background: #f0e2b0;
   color: #2c261c;
-  box-shadow: inset 0 0 0 4px #a4845c;
+  box-shadow: inset 0 0 0 4px #fff1c2;
+}
+
+/*
+ * 地形の基準色。凡例の色見本はここを見る。
+ * マス本体は未攻略を一段暗く、攻略済みを一段明るくして、
+ * 攻略するほど盤面が明るくなるようにする。
+ */
+:root {
+  --terrain-forest: #3e6b48;
+  --terrain-wasteland: #c2a57a;
+  --terrain-mountain: #8a4a32;
+}
+
+/* 未攻略は落ち着いた地色。暗い森と山脈は文字を明るくする。 */
+.map-cell.terrain-forest {
+  background: #2c4a38;
+  color: #f4f1e6;
+  box-shadow: inset 0 0 0 4px #223828;
+}
+
+.map-cell.terrain-wasteland {
+  background: #a88c5e;
+  color: #2c261c;
+  box-shadow: inset 0 0 0 4px #8a7048;
+}
+
+.map-cell.terrain-mountain {
+  background: #6a3a28;
+  color: #f4f1e6;
+  box-shadow: inset 0 0 0 4px #522c1e;
+}
+
+/* 攻略済みは同じ色味を明るくし、薄い金の内枠で達成を示す。文字は濃い色のまま読める。 */
+.map-cell.terrain-forest.is-revealed {
+  background: #62b56e;
 }
 
 .map-cell.terrain-wasteland.is-revealed {
-  background: #c2a57a;
-  color: #2c261c;
-  box-shadow: inset 0 0 0 4px #d9c78a;
-}
-
-/* 山脈は未探索も探索済みも地色は #8a4a32。Claimed は金の内枠で区別する。 */
-.map-cell.terrain-mountain {
-  background: #8a4a32;
-  color: #f4f1e6;
-  box-shadow: inset 0 0 0 4px #6b3826;
+  background: #e4c48a;
 }
 
 .map-cell.terrain-mountain.is-revealed {
-  background: #8a4a32;
-  color: #f4f1e6;
-  box-shadow: inset 0 0 0 4px #d9c78a;
+  background: #e39470;
+}
+
+.map-cell.terrain-forest.is-revealed,
+.map-cell.terrain-wasteland.is-revealed,
+.map-cell.terrain-mountain.is-revealed {
+  color: #2c261c;
+  box-shadow: inset 0 0 0 4px #fff1c2;
+}
+
+/* マップの直上。色見本と名前だけ。枠は付けず、盤面の操作を邪魔しない。 */
+.terrain-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 8px;
+  padding: 0 2px;
+  list-style: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.terrain-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.terrain-legend-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid #3e3424;
+}
+
+.terrain-legend-swatch.terrain-forest {
+  background: var(--terrain-forest);
+}
+
+.terrain-legend-swatch.terrain-wasteland {
+  background: var(--terrain-wasteland);
+}
+
+.terrain-legend-swatch.terrain-mountain {
+  background: var(--terrain-mountain);
 }
 
 .map-cell-label {
