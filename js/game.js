@@ -6,10 +6,11 @@
  * 派遣で state が変わったら renderMap() と renderLog() で画面を追従させる。
  *
  * 戦闘に出すカードは getDispatchUnit() だけが決める。
- * プレイヤーが所持一覧から選んだカードを派遣する。
+ * 編成 formationIds に1枚以上あれば、その並びの合計戦闘力で戦う。
+ * 編成が空なら、所持一覧で選んだ1枚で戦う。
  * 未選択のときだけ、power が一番高い1枚を選んでおく。
- * 選択は player.selectedIds に instanceId の配列で持つ。
- * 今は1件だけ入れる。複数入れれば、そのまま編成として戦闘できる。
+ * 選択は player.selectedIds、編成は player.formationIds。どちらも instanceId の配列。
+ * 編成の添字が枠の位置。効果や並べ順のボーナスは、この並びを読めば足せる。
  * レベルはカードに level が付いたとき、表示名へ足す。
  *
  * 公開 API は globalThis.ConquestGame。
@@ -33,6 +34,12 @@
     { templateId: 'orc', cost: 50, label: 'Evolve Orc' },
     { templateId: 'dragon', cost: 120, label: 'Evolve Dragon' },
   ];
+
+  /**
+   * 編成に同時に入れられる枚数。
+   * 枠を増やすときはこの数だけを変える。戦闘は formationIds の合計を見る。
+   */
+  const FORMATION_SIZE = 3;
 
   /**
    * マスに出す文字列。
@@ -115,8 +122,9 @@
   }
 
   /**
-   * 派遣対象が所持に残っているか確認し、空なら最強の1枚を選ぶ。
-   * selectedIds は編成用の配列。今の操作では1件だけ入る。
+   * 選択中の1枚が所持に残っているか確認し、空なら最強の1枚を選ぶ。
+   * selectedIds はフォールバック用。編成が入っているあいだは戦闘に使わない。
+   * 今の操作では1件だけ入る。
    *
    * @param {{ cards: object[], selectedIds?: number[] }} player
    */
@@ -133,7 +141,53 @@
   }
 
   /**
-   * そのカードが、いまの派遣対象に入っているか。
+   * 編成枠を整える。
+   * 所持に無い id と、同じ instanceId の重複を落とす。並び順は残す。
+   * 枚数は FORMATION_SIZE まで。あふれた後ろは捨てる。
+   *
+   * @param {{ cards: object[], formationIds?: number[] }} player
+   */
+  function ensureFormation(player) {
+    if (!Array.isArray(player.formationIds)) {
+      player.formationIds = [];
+    }
+    const kept = [];
+    player.formationIds.forEach(function (id) {
+      if (kept.length >= FORMATION_SIZE) {
+        return;
+      }
+      if (kept.indexOf(id) !== -1) {
+        return;
+      }
+      if (!findOwnedCard(player, id)) {
+        return;
+      }
+      kept.push(id);
+    });
+    player.formationIds = kept;
+  }
+
+  /**
+   * 編成スロットのカードを、左の枠から順に返す。
+   * 戦闘も表示もこの順を使う。効果を足すときは添字が枠番号になる。
+   *
+   * @param {{ cards: object[], formationIds?: number[] }} player
+   * @returns {object[]}
+   */
+  function formationCards(player) {
+    ensureFormation(player);
+    const cards = [];
+    player.formationIds.forEach(function (id) {
+      const card = findOwnedCard(player, id);
+      if (card) {
+        cards.push(card);
+      }
+    });
+    return cards;
+  }
+
+  /**
+   * そのカードが、選択中の1枚か。
    * @param {{ selectedIds?: number[] }} player
    * @param {{ instanceId: number }} card
    * @returns {boolean}
@@ -144,14 +198,36 @@
   }
 
   /**
-   * 今回派遣するカード。選択中の1枚、または将来の編成配列。
-   * 戻り値はそのまま resolveBattle に渡せる。
+   * 編成枠の位置。入っていなければ -1。0 が左端。
+   * @param {{ formationIds?: number[] }} player
+   * @param {{ instanceId: number }} card
+   * @returns {number}
+   */
+  function formationSlotIndex(player, card) {
+    if (!Array.isArray(player.formationIds)) {
+      return -1;
+    }
+    return player.formationIds.indexOf(card.instanceId);
+  }
+
+  /**
+   * 今回派遣するカード。
+   * 編成が1枚以上ならその並び。1枚ならカードそのもの、2枚以上なら配列。
+   * 編成が空なら、選択中の1枚。戻り値はそのまま resolveBattle に渡せる。
    *
-   * @param {{ cards: object[], selectedIds?: number[] }} player
+   * @param {{ cards: object[], selectedIds?: number[], formationIds?: number[] }} player
    * @returns {object|object[]}
    */
   function getDispatchUnit(player) {
     ensureSelection(player);
+    const formed = formationCards(player);
+    if (formed.length === 1) {
+      return formed[0];
+    }
+    if (formed.length > 1) {
+      return formed;
+    }
+
     const selected = player.cards.filter(function (card) {
       return isDispatchSelected(player, card);
     });
@@ -165,9 +241,8 @@
   }
 
   /**
-   * 派遣対象を、指定した所持カード1枚にする。
-   * 所持に無い id では何も変えない。
-   * 編成にするときは、この代入を配列への追加に変える。
+   * 編成が空のときに出す1枚を、指定した所持カードにする。
+   * 所持に無い id では何も変えない。編成の中身は変えない。
    *
    * @param {{ cards: object[], selectedIds?: number[] }} player
    * @param {number} instanceId
@@ -179,6 +254,33 @@
       return null;
     }
     player.selectedIds = [card.instanceId];
+    return card;
+  }
+
+  /**
+   * 所持カードを編成へ入れる。すでに入っていれば外す。
+   * 同じ instanceId は1枠まで。種類が同じ別カードは、別の instanceId なので入れられる。
+   * 枠がいっぱいのとき、新しいカードは入れず null を返す。
+   *
+   * @param {{ cards: object[], formationIds?: number[] }} player
+   * @param {number} instanceId
+   * @returns {object|null}
+   */
+  function toggleFormation(player, instanceId) {
+    const card = findOwnedCard(player, instanceId);
+    if (!card) {
+      return null;
+    }
+    ensureFormation(player);
+    const index = player.formationIds.indexOf(card.instanceId);
+    if (index !== -1) {
+      player.formationIds.splice(index, 1);
+      return card;
+    }
+    if (player.formationIds.length >= FORMATION_SIZE) {
+      return null;
+    }
+    player.formationIds.push(card.instanceId);
     return card;
   }
 
@@ -333,6 +435,7 @@
   /**
    * 画面の枠。
    * [data-region="status"] … 派遣カードと所持ゴールド。
+   * [data-region="formation"] … 編成枠。最大 FORMATION_SIZE。中身だけ入れ替える。
    * [data-region="cards"] … 所持カードの一覧。中身だけ入れ替える。
    * .terrain-legend … 地形の色と名前。静的なので再描画しない。
    * [data-region="map"] … マップ。再描画で中身だけ入れ替える。
@@ -379,6 +482,7 @@
     logHost.setAttribute('aria-live', 'polite');
 
     board.appendChild(statusHost);
+    board.appendChild(createFormationElement());
     board.appendChild(cardsHost);
     board.appendChild(createTerrainLegendElement());
     board.appendChild(mapHost);
@@ -386,6 +490,29 @@
     board.appendChild(resetButton);
     board.appendChild(logHost);
     return board;
+  }
+
+  /**
+   * 編成枠の置き場。中身は renderFormation が枚数ぶん作り直す。
+   * 枠の数は FORMATION_SIZE。ここには器だけを置く。
+   * @returns {HTMLElement}
+   */
+  function createFormationElement() {
+    const host = document.createElement('section');
+    host.className = 'formation-host';
+    host.dataset.region = 'formation';
+
+    const heading = document.createElement('h2');
+    heading.className = 'formation-heading';
+    heading.textContent = '編成';
+
+    const slots = document.createElement('ol');
+    slots.className = 'formation-slots';
+    slots.setAttribute('aria-label', '編成枠。最大' + FORMATION_SIZE + '枚');
+
+    host.appendChild(heading);
+    host.appendChild(slots);
+    return host;
   }
 
   /**
@@ -430,6 +557,7 @@
    * 名前は formatUnitName、出すユニットは getDispatchUnit に任せる。
    * 戦闘力は、派遣カードが1枚ならその power。配列なら合計。
    * 例: 派遣: オーク (Power 20)　所持ゴールド 70
+   * 編成が2枚以上なら名前を「・」でつなぎ、戦闘力は合計になる。
    *
    * @param {HTMLElement} root
    * @param {{ gold: number, cards: object[], formation?: object[] }} player
@@ -451,12 +579,64 @@
   }
 
   /**
-   * 所持カードを上から順に出す。並びは player.cards の順。
-   * 各行はボタン。選択中は色と「選択中」で区別する。
-   * 進化で push したカードは末尾に足され、次の再描画で現れる。
+   * 編成枠を左から描く。空枠は「空き」。入っている枠を押すと外れる。
+   * 並びは formationIds の順。効果を足すときもこの順が枠の位置になる。
    *
    * @param {HTMLElement} root
-   * @param {{ cards: object[], selectedIds?: number[] }} player
+   * @param {{ cards: object[], formationIds?: number[] }} player
+   */
+  function renderFormation(root, player) {
+    const slots = root.querySelector('[data-region="formation"] .formation-slots');
+    if (!slots) {
+      throw new Error('編成の描画先がありません');
+    }
+
+    const formed = formationCards(player);
+    slots.replaceChildren();
+    for (let i = 0; i < FORMATION_SIZE; i++) {
+      const card = formed[i] || null;
+      const item = document.createElement('li');
+      item.className = 'formation-slot';
+
+      if (!card) {
+        item.classList.add('is-empty');
+        item.textContent = '空き';
+        item.setAttribute('aria-label', (i + 1) + '枠目 空き');
+        slots.appendChild(item);
+        continue;
+      }
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'formation-slot-button';
+      button.dataset.action = 'toggle-formation';
+      button.dataset.instanceId = String(card.instanceId);
+      button.title = '編成から外す';
+      button.setAttribute('aria-label', (i + 1) + '枠目 ' + formatCardName(card) + ' を外す');
+
+      const name = document.createElement('span');
+      name.className = 'formation-slot-name';
+      name.textContent = formatCardName(card);
+
+      const power = document.createElement('span');
+      power.className = 'formation-slot-power';
+      power.textContent = 'Power ' + card.power;
+
+      button.appendChild(name);
+      button.appendChild(power);
+      item.appendChild(button);
+      slots.appendChild(item);
+    }
+  }
+
+  /**
+   * 所持カードを上から順に出す。並びは player.cards の順。
+   * 名前のボタンは選択中の1枚を切り替える。右のボタンで編成へ入れる／外す。
+   * 選択中は色と「選択中」。編成中は枠番号。両方は同時に付けられる。
+   * 進化で push したカードは末尾に足され、次の再描画で現れる。編成には自動で入らない。
+   *
+   * @param {HTMLElement} root
+   * @param {{ cards: object[], selectedIds?: number[], formationIds?: number[] }} player
    */
   function renderCards(root, player) {
     const list = root.querySelector('[data-region="cards"] .cards-list');
@@ -465,11 +645,15 @@
     }
 
     ensureSelection(player);
+    ensureFormation(player);
+    const formationFull = player.formationIds.length >= FORMATION_SIZE;
     list.replaceChildren();
     player.cards.forEach(function (card) {
       const item = document.createElement('li');
+      item.className = 'cards-row';
       const button = document.createElement('button');
       const selected = isDispatchSelected(player, card);
+      const slotIndex = formationSlotIndex(player, card);
 
       button.type = 'button';
       button.className = 'cards-item';
@@ -485,14 +669,42 @@
       name.textContent = formatOwnedCard(card);
       button.appendChild(name);
 
+      const marks = [];
       if (selected) {
+        marks.push('選択中');
+      }
+      if (slotIndex !== -1) {
+        marks.push('編成' + (slotIndex + 1));
+      }
+      if (marks.length > 0) {
         const mark = document.createElement('span');
         mark.className = 'cards-item-mark';
-        mark.textContent = '選択中';
+        mark.textContent = marks.join(' ');
         button.appendChild(mark);
       }
 
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'cards-formation-button';
+      toggle.dataset.action = 'toggle-formation';
+      toggle.dataset.instanceId = String(card.instanceId);
+      if (slotIndex !== -1) {
+        toggle.classList.add('is-in-formation');
+        toggle.textContent = '外す';
+        toggle.setAttribute('aria-label', '編成から外す');
+        toggle.setAttribute('aria-pressed', 'true');
+      } else {
+        toggle.textContent = '編成に入れる';
+        toggle.setAttribute('aria-label', '編成に入れる');
+        toggle.setAttribute('aria-pressed', 'false');
+        toggle.disabled = formationFull;
+        if (formationFull) {
+          toggle.title = '編成は' + FORMATION_SIZE + '枚まで';
+        }
+      }
+
       item.appendChild(button);
+      item.appendChild(toggle);
       list.appendChild(item);
     });
   }
@@ -541,7 +753,9 @@
    */
   function refreshPlayer(root, player) {
     ensureSelection(player);
+    ensureFormation(player);
     renderStatus(root, player);
+    renderFormation(root, player);
     renderCards(root, player);
     renderEvolve(root, player);
   }
@@ -569,6 +783,7 @@
 
   /**
    * 1マスへ派遣して戦闘する。
+   * 敵の種類と強さは、そのマスの terrain から決まる。数値は敵専用で、所持カードとは別。
    * 探索済みなら何も変えず null を返す。敗北でもマスはそのままなので、再クリックできる。
    * 勝利時だけ isRevealed を立て、獲得ゴールドを財布へ足す。
    * rewardGold にはマスのゴールドが既に含まれている。ここで cell.gold は足さない。
@@ -586,7 +801,7 @@
     }
 
     const unit = getDispatchUnit(state.player);
-    const enemy = globalThis.ConquestData.createRandomEnemy();
+    const enemy = globalThis.ConquestData.createEnemyForTerrain(cell.terrain);
     const battle = globalThis.ConquestData.resolveBattle(unit, enemy, {
       cellGold: cell.gold,
     });
@@ -668,8 +883,23 @@
         return card;
       },
       /**
-       * 所持一覧で選んだ1枚を、次の派遣対象にする。
-       * ステータスと一覧の「選択中」を描き直す。
+       * 所持カードを編成へ入れる。入っていれば外す。
+       * 枠が埋まっているときの追加は無視する。表示は入れ替え後の並びにする。
+       *
+       * @param {number} instanceId
+       * @returns {object|null}
+       */
+      toggleFormation: function (instanceId) {
+        const card = toggleFormation(game.state.player, instanceId);
+        if (!card) {
+          return null;
+        }
+        refreshPlayer(root, game.state.player);
+        return card;
+      },
+      /**
+       * 所持一覧で選んだ1枚を、編成が空のときの派遣対象にする。
+       * 編成の中身は変えない。ステータスと一覧の「選択中」を描き直す。
        *
        * @param {number} instanceId
        * @returns {object|null}

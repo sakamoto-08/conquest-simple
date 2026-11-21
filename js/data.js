@@ -63,24 +63,17 @@
   };
 
   /**
-   * 派遣時に出現する敵の抽選表。
-   * weight の合計に対する比率が出現率になる。種類を足すときは行を足す。
-   */
-  const ENEMY_SPAWN_TABLE = [
-    { templateId: 'goblin', weight: 55 },
-    { templateId: 'orc', weight: 30 },
-    { templateId: 'dragon', weight: 15 },
-  ];
-
-  /**
    * マスの地形。weight の合計に対する比率が出現率になる。
    * いまは同率。偏らせるときは weight だけを変える。
-   * 色は game.js が id からクラスを付ける。敵の出現条件は、まだこの表を見ない。
+   * enemyTemplateId は、その地形へ派遣したときに出る敵の見た目と名前。
+   * enemyPower と enemyRewardGold は敵専用の数値で、CARD_TEMPLATES とは別に持つ。
+   * プレイヤーが Evolve で得るカードの強さは、ここを変えても変わらない。
+   * 色は game.js が id からクラスを付ける。
    */
   const TERRAIN_TABLE = [
-    { id: 'forest', name: '森', weight: 1 },
-    { id: 'wasteland', name: '荒野', weight: 1 },
-    { id: 'mountain', name: '山脈', weight: 1 },
+    { id: 'forest', name: '森', weight: 1, enemyTemplateId: 'goblin', enemyPower: 9, enemyRewardGold: 10 },
+    { id: 'wasteland', name: '荒野', weight: 1, enemyTemplateId: 'orc', enemyPower: 20, enemyRewardGold: 22 },
+    { id: 'mountain', name: '山脈', weight: 1, enemyTemplateId: 'dragon', enemyPower: 45, enemyRewardGold: 55 },
   ];
 
   /** インスタンスを一意に区別する連番。複数枚所持したときの識別子。 */
@@ -123,34 +116,38 @@
   }
 
   /**
-   * 抽選表から敵カードを1枚作る。
-   * マップ生成時には呼ばない。派遣したタイミングでマスへ載せる。
+   * 地形に対応する敵カードを1枚作る。
+   * 名前は enemyTemplateId のテンプレートから取り、戦闘力と報酬は地形の敵専用値で上書きする。
+   * 上書きするのはこのインスタンスだけ。CARD_TEMPLATES と所持カードは変えない。
+   * マップ生成時には呼ばない。派遣したタイミングで game.js が呼ぶ。
    *
-   * @param {() => number} [random]
+   * @param {string} terrainId TERRAIN_TABLE の id
    * @returns {Card}
    */
-  function createRandomEnemy(random) {
-    const roll = random || Math.random;
-    const totalWeight = ENEMY_SPAWN_TABLE.reduce(function (sum, entry) {
-      return sum + entry.weight;
-    }, 0);
-
-    let cursor = roll() * totalWeight;
-    for (let i = 0; i < ENEMY_SPAWN_TABLE.length; i++) {
-      cursor -= ENEMY_SPAWN_TABLE[i].weight;
-      if (cursor < 0) {
-        return createCard(ENEMY_SPAWN_TABLE[i].templateId);
+  function createEnemyForTerrain(terrainId) {
+    let entry = null;
+    for (let i = 0; i < TERRAIN_TABLE.length; i++) {
+      if (TERRAIN_TABLE[i].id === terrainId) {
+        entry = TERRAIN_TABLE[i];
+        break;
       }
     }
+    if (!entry || !entry.enemyTemplateId) {
+      throw new Error('地形に対応する敵がありません: ' + terrainId);
+    }
 
-    const last = ENEMY_SPAWN_TABLE[ENEMY_SPAWN_TABLE.length - 1];
-    return createCard(last.templateId);
+    const enemy = createCard(entry.enemyTemplateId);
+    enemy.power = entry.enemyPower;
+    enemy.rewardGold = entry.enemyRewardGold;
+    return enemy;
   }
 
   /**
    * 初期プレイヤー。所持はカード配列で、最初の1枚はゴブリン。
    * gold は財布。戦闘の rewardGold をあとからここへ足す。
-   * 編成は未使用。派遣ユニットを増やすときは cards から選んで配列にする。
+   * formationIds は編成スロットの instanceId を左から順に並べたもの。
+   * 中身は識別子だけ。効果や枠の意味は、この並びの位置を使ってあとから足せる。
+   * 最大枚数と、空のときに選択中の1枚へ戻す処理は game.js が持つ。最初は空。
    *
    * @returns {Player}
    */
@@ -158,6 +155,7 @@
     return {
       gold: 0,
       cards: [createCard('goblin')],
+      formationIds: [],
     };
   }
 
@@ -187,7 +185,7 @@
 
   /**
    * 未探索のマスを1つ作る。敵は派遣まで null。
-   * terrain は見た目や戦闘にはまだ使わない。
+   * terrain は見た目と、派遣時に出す敵の種類に使う。
    *
    * @param {() => number} [random]
    * @returns {Cell}
@@ -353,6 +351,7 @@
     const state = createInitialState();
     assert(state.player.cards.length === 1, '初期所持は1枚');
     assert(state.player.cards[0].templateId === 'goblin', '初期カードはゴブリン');
+    assert(Array.isArray(state.player.formationIds) && state.player.formationIds.length === 0, '初期編成は空');
     assert(state.player.cards[0].instanceId !== createCard('goblin').instanceId, 'インスタンスIDは重複しない');
     assert(state.map.length === MAP_SIZE, 'マップは' + MAP_SIZE + '行');
     assert(state.map[0].length === MAP_SIZE, 'マップは' + MAP_SIZE + '列');
@@ -372,6 +371,25 @@
     const forestCell = createCell(sequenceRandom([0, 0]));
     assert(forestCell.gold === CELL_GOLD_MIN, '乱数0ではゴールド下限');
     assert(forestCell.terrain === 'forest', '乱数0では表の先頭の地形');
+
+    const forestEnemy = createEnemyForTerrain('forest');
+    const wastelandEnemy = createEnemyForTerrain('wasteland');
+    const mountainEnemy = createEnemyForTerrain('mountain');
+    assert(forestEnemy.templateId === 'goblin' && forestEnemy.power === 9 && forestEnemy.rewardGold === 10, '森の敵はゴブリンで Power 9');
+    assert(wastelandEnemy.templateId === 'orc' && wastelandEnemy.power === 20 && wastelandEnemy.rewardGold === 22, '荒野の敵はオークで Power 20');
+    assert(mountainEnemy.templateId === 'dragon' && mountainEnemy.power === 45 && mountainEnemy.rewardGold === 55, '山脈の敵はドラゴンで Power 45');
+    assert(CARD_TEMPLATES.goblin.power === 10 && CARD_TEMPLATES.goblin.rewardGold === 8, '所持ゴブリンのマスタは敵の数値で変わらない');
+    assert(CARD_TEMPLATES.orc.power === 20 && CARD_TEMPLATES.orc.rewardGold === 20, '所持オークのマスタは敵の数値で変わらない');
+    assert(CARD_TEMPLATES.dragon.power === 40 && CARD_TEMPLATES.dragon.rewardGold === 50, '所持ドラゴンのマスタは敵の数値で変わらない');
+
+    const forestFight = resolveBattle(createCard('goblin'), forestEnemy, {
+      variance: 0,
+      cellGold: 10,
+      random: Math.random,
+    });
+    assert(forestFight.result === 'win', 'ぶれなしでは所持ゴブリンが森の敵に勝つ');
+    assert(forestFight.enemyPower === 9, '戦闘は敵専用の戦闘力を使う');
+    assert(forestFight.rewardGold === 20, '森の敵報酬10にマスのゴールド10を足す');
 
     const goblin = createCard('goblin');
     const dragon = createCard('dragon');
@@ -422,7 +440,7 @@
     }));
 
     const sampleCell = state.map[1][1];
-    sampleCell.enemy = createRandomEnemy();
+    sampleCell.enemy = createEnemyForTerrain(sampleCell.terrain);
     const sample = resolveBattle(state.player.cards[0], sampleCell.enemy, {
       cellGold: sampleCell.gold,
     });
@@ -451,10 +469,9 @@
   globalThis.ConquestData = {
     MAP_SIZE: MAP_SIZE,
     CARD_TEMPLATES: CARD_TEMPLATES,
-    ENEMY_SPAWN_TABLE: ENEMY_SPAWN_TABLE,
     TERRAIN_TABLE: TERRAIN_TABLE,
     createCard: createCard,
-    createRandomEnemy: createRandomEnemy,
+    createEnemyForTerrain: createEnemyForTerrain,
     createPlayer: createPlayer,
     createMap: createMap,
     createInitialState: createInitialState,

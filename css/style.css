@@ -54,12 +54,23 @@ h1 {
   list-style: none;
 }
 
+.cards-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.cards-list li + li {
+  border-top: 1px solid #e6d8b4;
+}
+
 .cards-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   margin: 0;
   padding: 8px 6px;
   font: inherit;
@@ -70,10 +81,6 @@ h1 {
   background: transparent;
   border: 0;
   cursor: pointer;
-}
-
-.cards-list li + li .cards-item {
-  border-top: 1px solid #e6d8b4;
 }
 
 .cards-item:hover {
@@ -94,6 +101,109 @@ h1 {
   flex: none;
   font-size: 0.75rem;
   letter-spacing: 0.06em;
+}
+
+.cards-formation-button {
+  flex: none;
+  width: 7.2em;
+  margin: 4px 0;
+  padding: 6px 4px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: inherit;
+  background: #fffdf8;
+  border: 2px solid #3e3424;
+  cursor: pointer;
+}
+
+.cards-formation-button:hover:not(:disabled) {
+  background: #fff;
+}
+
+.cards-formation-button:focus-visible {
+  outline: 3px solid #8a5a12;
+  outline-offset: -3px;
+}
+
+.cards-formation-button.is-in-formation,
+.cards-formation-button.is-in-formation:hover {
+  background: #dce6c8;
+}
+
+.cards-formation-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 所持一覧の上。3枠固定。空きは破線、入っている枠を押すと外れる。 */
+.formation-host {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #fffdf8;
+  border: 2px solid #3e3424;
+}
+
+.formation-heading {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.formation-slots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.formation-slot {
+  min-height: 52px;
+}
+
+.formation-slot.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8a7d68;
+  background: #f7f1e4;
+  border: 2px dashed #c9b27a;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.formation-slot-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 4px;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  color: inherit;
+  background: #e7dcc0;
+  border: 2px solid #3e3424;
+  cursor: pointer;
+}
+
+.formation-slot-button:hover {
+  background: #efe4c8;
+}
+
+.formation-slot-button:focus-visible {
+  outline: 3px solid #8a5a12;
+  outline-offset: 2px;
+}
+
+.formation-slot-power {
+  font-size: 0.75rem;
 }
 
 /* 列数は game.js が --map-size に入れる。狭い画面では横スクロールし、マスは 76px より小さくしない。 */

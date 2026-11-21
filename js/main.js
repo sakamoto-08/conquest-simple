@@ -4,10 +4,11 @@
  *
  * マスは戦闘のたびに renderMap() で作り直される。
  * listener は #app に1つだけ付け、押された要素で処理を分ける。
- *   .map-cell                  … game.dispatch()
- *   [data-action="select-card"] … game.select()
- *   [data-action="evolve"]      … game.evolve()
- *   [data-action="reset"]       … game.reset()
+ *   .map-cell                     … game.dispatch()
+ *   [data-action="select-card"]   … game.select()
+ *   [data-action="toggle-formation"] … game.toggleFormation()
+ *   [data-action="evolve"]        … game.evolve()
+ *   [data-action="reset"]         … game.reset()
  */
 (function () {
   'use strict';
@@ -19,6 +20,12 @@
   ConquestGame.current = game;
 
   app.addEventListener('click', function (event) {
+    const formationButton = event.target.closest('[data-action="toggle-formation"]');
+    if (formationButton && app.contains(formationButton)) {
+      game.toggleFormation(Number(formationButton.dataset.instanceId));
+      return;
+    }
+
     const cardButton = event.target.closest('[data-action="select-card"]');
     if (cardButton && app.contains(cardButton)) {
       game.select(Number(cardButton.dataset.instanceId));
