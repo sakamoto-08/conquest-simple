@@ -4,6 +4,7 @@
  *
  * データは ConquestData、クリックの受け取りは main.js が担当する。
  * 派遣で state が変わったら renderMap() と renderLog() で画面を追従させる。
+ * すべてのマスが Claimed になったらクリア。表示は renderClear()。
  *
  * 戦闘に出すカードは getDispatchUnit() だけが決める。
  * 編成 formationIds に1枚以上あれば、その並びの合計戦闘力で戦う。
@@ -439,6 +440,7 @@
    * [data-region="cards"] … 所持カードの一覧。中身だけ入れ替える。
    * .terrain-legend … 地形の色と名前。静的なので再描画しない。
    * [data-region="map"] … マップ。再描画で中身だけ入れ替える。
+   * [data-region="clear"] … 全マス攻略時の Clear!。空のあいだは表示しない。
    * [data-action="evolve"] … ゴールドでカードを追加するボタン。押す処理は main.js。
    * [data-action="reset"] … 初期状態へ戻すボタン。押す処理は main.js。
    * [data-region="log"] … 戦闘結果。空のあいだは表示しない。
@@ -470,6 +472,12 @@
     mapHost.className = 'map-host';
     mapHost.dataset.region = 'map';
 
+    const clearHost = document.createElement('div');
+    clearHost.className = 'clear-banner';
+    clearHost.dataset.region = 'clear';
+    clearHost.setAttribute('role', 'status');
+    clearHost.setAttribute('aria-live', 'polite');
+
     const resetButton = document.createElement('button');
     resetButton.type = 'button';
     resetButton.className = 'reset-button';
@@ -486,6 +494,7 @@
     board.appendChild(cardsHost);
     board.appendChild(createTerrainLegendElement());
     board.appendChild(mapHost);
+    board.appendChild(clearHost);
     board.appendChild(createEvolveElement());
     board.appendChild(resetButton);
     board.appendChild(logHost);
@@ -761,6 +770,56 @@
   }
 
   /**
+   * マップ上のマスがすべて攻略済みか。
+   * 1マスでも Void が残っていればクリアではない。空のマップはクリアにしない。
+   *
+   * @param {Array<Array<{ isRevealed: boolean }>>} map
+   * @returns {boolean}
+   */
+  function isMapCleared(map) {
+    if (!map || map.length === 0) {
+      return false;
+    }
+    for (let row = 0; row < map.length; row++) {
+      for (let col = 0; col < map[row].length; col++) {
+        if (!map[row][col].isRevealed) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
+   * クリア表示。cleared が false のときは中身を空にして隠す。
+   * 戦闘ログとは別に出す。最後の勝敗はログに残し、ここは達成だけを知らせる。
+   *
+   * @param {HTMLElement} root
+   * @param {boolean} cleared
+   */
+  function renderClear(root, cleared) {
+    const banner = root.querySelector('[data-region="clear"]');
+    if (!banner) {
+      throw new Error('クリア表示の描画先がありません');
+    }
+    banner.replaceChildren();
+    if (!cleared) {
+      return;
+    }
+
+    const title = document.createElement('p');
+    title.className = 'clear-banner-title';
+    title.textContent = 'Clear!';
+
+    const note = document.createElement('p');
+    note.className = 'clear-banner-note';
+    note.textContent = 'すべてのマスを攻略した';
+
+    banner.appendChild(title);
+    banner.appendChild(note);
+  }
+
+  /**
    * 戦闘結果などの一文をログ領域へ出す。空文字なら領域を空に戻す。
    * result は 'win' か 'lose'。色分けにだけ使う。
    *
@@ -784,7 +843,8 @@
   /**
    * 1マスへ派遣して戦闘する。
    * 敵の種類と強さは、そのマスの terrain から決まる。数値は敵専用で、所持カードとは別。
-   * 探索済みなら何も変えず null を返す。敗北でもマスはそのままなので、再クリックできる。
+   * 探索済みなら何も変えず null を返す。全マス攻略のあとにも戦闘は起こさない。
+   * 敗北でもマスはそのままなので、再クリックできる。
    * 勝利時だけ isRevealed を立て、獲得ゴールドを財布へ足す。
    * rewardGold にはマスのゴールドが既に含まれている。ここで cell.gold は足さない。
    *
@@ -794,6 +854,9 @@
    * @returns {null|{ unit: object|object[], enemy: object, battle: object, cell: object }}
    */
   function dispatchToCell(state, row, col) {
+    if (isMapCleared(state.map)) {
+      return null;
+    }
     const line = state.map[row];
     const cell = line && line[col];
     if (!cell || cell.isRevealed) {
@@ -865,6 +928,9 @@
         renderMap(root, game.state.map);
         refreshPlayer(root, game.state.player);
         renderLog(root, formatBattleLog(outcome, game.state.player), outcome.battle.result);
+        if (isMapCleared(game.state.map)) {
+          renderClear(root, true);
+        }
         return outcome;
       },
       /**
@@ -913,7 +979,7 @@
         return card;
       },
       /**
-       * 探索状況、所持ゴールド、追加したカード、戦闘ログを捨てて最初からにする。
+       * 探索状況、所持ゴールド、追加したカード、戦闘ログ、クリア表示を捨てて最初からにする。
        * カードの初期所持も createInitialState の定義に従う。
        */
       reset: function () {
@@ -921,6 +987,7 @@
         refreshPlayer(root, game.state.player);
         renderMap(root, game.state.map);
         renderLog(root, '');
+        renderClear(root, false);
       },
     };
 

@@ -359,6 +359,35 @@ h1 {
   text-align: center;
 }
 
+/* 全マス攻略のときだけ出す。空のあいだは高さを持たない。 */
+.clear-banner:empty {
+  display: none;
+}
+
+.clear-banner:not(:empty) {
+  margin-top: 12px;
+  padding: 18px 16px 16px;
+  text-align: center;
+  background: #fff6d4;
+  border: 3px solid #c6a15a;
+  box-shadow: inset 0 0 0 4px #ffe9a3;
+}
+
+.clear-banner-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #6a4a12;
+}
+
+.clear-banner-note {
+  margin: 6px 0 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #3e3424;
+}
+
 /* マップの直下。2枚並び。種類が増えてもこの枠にボタンを足す。 */
 .evolve-actions {
   display: grid;
