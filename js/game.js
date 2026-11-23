@@ -502,8 +502,8 @@
   }
 
   /**
-   * 編成枠の置き場。中身は renderFormation が枚数ぶん作り直す。
-   * 枠の数は FORMATION_SIZE。ここには器だけを置く。
+   * 編成枠の置き場。中身と合計Powerは renderFormation が描き直す。
+   * 枠は常に FORMATION_SIZE 個。空でも枠自体は残し、最大枚数が分かるようにする。
    * @returns {HTMLElement}
    */
   function createFormationElement() {
@@ -511,15 +511,24 @@
     host.className = 'formation-host';
     host.dataset.region = 'formation';
 
+    const headingRow = document.createElement('div');
+    headingRow.className = 'formation-heading-row';
+
     const heading = document.createElement('h2');
     heading.className = 'formation-heading';
     heading.textContent = '編成';
+
+    const power = document.createElement('p');
+    power.className = 'formation-power';
+    power.textContent = '編成 Power: 0';
 
     const slots = document.createElement('ol');
     slots.className = 'formation-slots';
     slots.setAttribute('aria-label', '編成枠。最大' + FORMATION_SIZE + '枚');
 
-    host.appendChild(heading);
+    headingRow.appendChild(heading);
+    headingRow.appendChild(power);
+    host.appendChild(headingRow);
     host.appendChild(slots);
     return host;
   }
@@ -588,29 +597,48 @@
   }
 
   /**
-   * 編成枠を左から描く。空枠は「空き」。入っている枠を押すと外れる。
+   * 編成枠を左から FORMATION_SIZE 個描く。空きは「空」。
+   * 入っている枠には名前と Power を出し、押すとそのカードを外す。
+   * 合計は編成中の power だけを足す。未編成なら 0。選択中の1枚は含めない。
+   * 入れ外しのあとは refreshPlayer からここが呼ばれ、枠と合計が同時に更新される。
    * 並びは formationIds の順。効果を足すときもこの順が枠の位置になる。
    *
    * @param {HTMLElement} root
    * @param {{ cards: object[], formationIds?: number[] }} player
    */
   function renderFormation(root, player) {
-    const slots = root.querySelector('[data-region="formation"] .formation-slots');
-    if (!slots) {
+    const host = root.querySelector('[data-region="formation"]');
+    const slots = host && host.querySelector('.formation-slots');
+    const total = host && host.querySelector('.formation-power');
+    if (!slots || !total) {
       throw new Error('編成の描画先がありません');
     }
 
     const formed = formationCards(player);
+    const formedPower = formed.reduce(function (sum, card) {
+      return sum + card.power;
+    }, 0);
+    total.textContent = '編成 Power: ' + formedPower;
+
     slots.replaceChildren();
     for (let i = 0; i < FORMATION_SIZE; i++) {
       const card = formed[i] || null;
+      const slotNumber = i + 1;
       const item = document.createElement('li');
       item.className = 'formation-slot';
 
+      const index = document.createElement('span');
+      index.className = 'formation-slot-index';
+      index.textContent = String(slotNumber);
+
       if (!card) {
         item.classList.add('is-empty');
-        item.textContent = '空き';
-        item.setAttribute('aria-label', (i + 1) + '枠目 空き');
+        const empty = document.createElement('span');
+        empty.className = 'formation-slot-empty';
+        empty.textContent = '空';
+        item.setAttribute('aria-label', slotNumber + '枠目 空');
+        item.appendChild(index);
+        item.appendChild(empty);
         slots.appendChild(item);
         continue;
       }
@@ -621,7 +649,7 @@
       button.dataset.action = 'toggle-formation';
       button.dataset.instanceId = String(card.instanceId);
       button.title = '編成から外す';
-      button.setAttribute('aria-label', (i + 1) + '枠目 ' + formatCardName(card) + ' を外す');
+      button.setAttribute('aria-label', slotNumber + '枠目 ' + formatCardName(card) + ' Power ' + card.power + ' を外す');
 
       const name = document.createElement('span');
       name.className = 'formation-slot-name';
@@ -631,6 +659,7 @@
       power.className = 'formation-slot-power';
       power.textContent = 'Power ' + card.power;
 
+      button.appendChild(index);
       button.appendChild(name);
       button.appendChild(power);
       item.appendChild(button);

@@ -137,7 +137,7 @@ h1 {
   cursor: default;
 }
 
-/* 所持一覧の上。3枠固定。空きは破線、入っている枠を押すと外れる。 */
+/* 所持一覧の上。3枠は常に並べ、番号で最大枚数を示す。空枠は破線。 */
 .formation-host {
   margin-bottom: 12px;
   padding: 10px 12px;
@@ -145,9 +145,24 @@ h1 {
   border: 2px solid #3e3424;
 }
 
+.formation-heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+
 .formation-heading {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.formation-power {
+  margin: 0;
+  font-size: 1rem;
   font-weight: 700;
 }
 
@@ -161,17 +176,26 @@ h1 {
 }
 
 .formation-slot {
-  min-height: 52px;
+  min-height: 64px;
+}
+
+.formation-slot-index {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #8a7d68;
 }
 
 .formation-slot.is-empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   color: #8a7d68;
   background: #f7f1e4;
   border: 2px dashed #c9b27a;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 700;
 }
 
@@ -200,6 +224,11 @@ h1 {
 .formation-slot-button:focus-visible {
   outline: 3px solid #8a5a12;
   outline-offset: 2px;
+}
+
+.formation-slot-name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .formation-slot-power {
