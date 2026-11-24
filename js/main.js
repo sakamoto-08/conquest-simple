@@ -8,6 +8,7 @@
  *   [data-action="select-card"]   … game.select()
  *   [data-action="toggle-formation"] … game.toggleFormation()
  *   [data-action="evolve"]        … game.evolve()
+ *   [data-action="save"]          … game.save()
  *   [data-action="reset"]         … game.reset()
  */
 (function () {
@@ -35,6 +36,12 @@
     const evolveButton = event.target.closest('[data-action="evolve"]');
     if (evolveButton && app.contains(evolveButton)) {
       game.evolve(evolveButton.dataset.templateId);
+      return;
+    }
+
+    const saveButton = event.target.closest('[data-action="save"]');
+    if (saveButton && app.contains(saveButton)) {
+      game.save();
       return;
     }
 

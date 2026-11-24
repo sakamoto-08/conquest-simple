@@ -80,6 +80,24 @@
   let nextInstanceId = 1;
 
   /**
+   * セーブデータなど、既に使われた instanceId を採番に知らせる。
+   * 読み込んだカードより小さい番号は、次の createCard が再利用しない。
+   * 今の連番より小さい値では、連番を戻さない。
+   *
+   * @param {number} id
+   */
+  function noteInstanceId(id) {
+    const numeric = Number(id);
+    if (!isFinite(numeric) || numeric < 0) {
+      return;
+    }
+    const next = Math.floor(numeric) + 1;
+    if (next > nextInstanceId) {
+      nextInstanceId = next;
+    }
+  }
+
+  /**
    * min 以上 max 以下の整数を返す。
    * @param {number} min
    * @param {number} max
@@ -353,6 +371,11 @@
     assert(state.player.cards[0].templateId === 'goblin', '初期カードはゴブリン');
     assert(Array.isArray(state.player.formationIds) && state.player.formationIds.length === 0, '初期編成は空');
     assert(state.player.cards[0].instanceId !== createCard('goblin').instanceId, 'インスタンスIDは重複しない');
+    const notedFrom = createCard('goblin').instanceId;
+    noteInstanceId(notedFrom + 10);
+    assert(createCard('goblin').instanceId === notedFrom + 11, '読み込んだIDの次から採番する');
+    noteInstanceId(1);
+    assert(createCard('goblin').instanceId === notedFrom + 12, '小さいIDでは採番を戻さない');
     assert(state.map.length === MAP_SIZE, 'マップは' + MAP_SIZE + '行');
     assert(state.map[0].length === MAP_SIZE, 'マップは' + MAP_SIZE + '列');
 
@@ -471,6 +494,7 @@
     CARD_TEMPLATES: CARD_TEMPLATES,
     TERRAIN_TABLE: TERRAIN_TABLE,
     createCard: createCard,
+    noteInstanceId: noteInstanceId,
     createEnemyForTerrain: createEnemyForTerrain,
     createPlayer: createPlayer,
     createMap: createMap,

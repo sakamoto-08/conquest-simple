@@ -451,11 +451,19 @@ h1 {
   cursor: default;
 }
 
-/* 進化ボタンの下。ログより上なので、戦闘結果が出ても位置がずれない。 */
+/* 進化ボタンの下。Save と Reset を横に並べ、結果の一文はログとは別に出す。 */
+.session-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.save-button,
 .reset-button {
   display: block;
   width: 100%;
-  margin-top: 12px;
+  margin: 0;
   padding: 12px 16px;
   font: inherit;
   font-weight: 700;
@@ -466,13 +474,26 @@ h1 {
   cursor: pointer;
 }
 
+.save-button:hover,
 .reset-button:hover {
   background: #fff;
 }
 
+.save-button:focus-visible,
 .reset-button:focus-visible {
   outline: 3px solid #8a5a12;
   outline-offset: 2px;
+}
+
+.save-note:empty {
+  display: none;
+}
+
+.save-note:not(:empty) {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 /* 戦闘結果などを出すまで、空のログは高さを持たない。 */

@@ -5,6 +5,7 @@
  * データは ConquestData、クリックの受け取りは main.js が担当する。
  * 派遣で state が変わったら renderMap() と renderLog() で画面を追従させる。
  * すべてのマスが Claimed になったらクリア。表示は renderClear()。
+ * 進行は localStorage へ手動で保存し、次に開いたとき保存があれば読み込む。
  *
  * 戦闘に出すカードは getDispatchUnit() だけが決める。
  * 編成 formationIds に1枚以上あれば、その並びの合計戦闘力で戦う。
@@ -41,6 +42,13 @@
    * 枠を増やすときはこの数だけを変える。戦闘は formationIds の合計を見る。
    */
   const FORMATION_SIZE = 3;
+
+  /**
+   * ブラウザに残すセーブのキーと版。
+   * 中身の形を変えたら SAVE_VERSION を上げ、古いデータは読み捨てる。
+   */
+  const SAVE_KEY = 'conquest-simple-save';
+  const SAVE_VERSION = 1;
 
   /**
    * マスに出す文字列。
@@ -442,7 +450,8 @@
    * [data-region="map"] … マップ。再描画で中身だけ入れ替える。
    * [data-region="clear"] … 全マス攻略時の Clear!。空のあいだは表示しない。
    * [data-action="evolve"] … ゴールドでカードを追加するボタン。押す処理は main.js。
-   * [data-action="reset"] … 初期状態へ戻すボタン。押す処理は main.js。
+   * [data-action="save"] … 進行を localStorage へ書く。押す処理は main.js。
+   * [data-action="reset"] … 確認のあと初期状態へ戻し、保存も消す。押す処理は main.js。
    * [data-region="log"] … 戦闘結果。空のあいだは表示しない。
    * @returns {HTMLElement}
    */
@@ -478,11 +487,28 @@
     clearHost.setAttribute('role', 'status');
     clearHost.setAttribute('aria-live', 'polite');
 
+    const sessionActions = document.createElement('div');
+    sessionActions.className = 'session-actions';
+
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'save-button';
+    saveButton.dataset.action = 'save';
+    saveButton.textContent = 'Save';
+
     const resetButton = document.createElement('button');
     resetButton.type = 'button';
     resetButton.className = 'reset-button';
     resetButton.dataset.action = 'reset';
     resetButton.textContent = 'Reset';
+
+    const saveNote = document.createElement('p');
+    saveNote.className = 'save-note';
+    saveNote.dataset.region = 'save-note';
+    saveNote.setAttribute('aria-live', 'polite');
+
+    sessionActions.appendChild(saveButton);
+    sessionActions.appendChild(resetButton);
 
     const logHost = document.createElement('div');
     logHost.className = 'log-host';
@@ -496,7 +522,8 @@
     board.appendChild(mapHost);
     board.appendChild(clearHost);
     board.appendChild(createEvolveElement());
-    board.appendChild(resetButton);
+    board.appendChild(sessionActions);
+    board.appendChild(saveNote);
     board.appendChild(logHost);
     return board;
   }
@@ -913,11 +940,279 @@
   }
 
   /**
+   * localStorage の読み書き。使えない環境や容量不足では例外を外へ出さない。
+   * @param {string} key
+   * @returns {string|null}
+   */
+  function readStorage(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * @param {string} key
+   * @param {string} value
+   * @returns {boolean}
+   */
+  function writeStorage(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * @param {string} key
+   * @returns {boolean}
+   */
+  function removeStorage(key) {
+    try {
+      window.localStorage.removeItem(key);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * 保存用に、カードからプレーンな項目だけを写す。
+   * @param {object} card
+   * @returns {object}
+   */
+  function copyCard(card) {
+    const copy = {
+      instanceId: card.instanceId,
+      templateId: card.templateId,
+      name: card.name,
+      power: card.power,
+      rewardGold: card.rewardGold,
+      rank: card.rank,
+    };
+    if (card.level != null) {
+      copy.level = card.level;
+    }
+    return copy;
+  }
+
+  /**
+   * 読み込んだオブジェクトがカードとして使えるなら、新しいオブジェクトにして返す。
+   * 未知のテンプレートや壊れた数値は null。通った ID は次の採番へ知らせる。
+   *
+   * @param {object} raw
+   * @returns {object|null}
+   */
+  function restoreCard(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return null;
+    }
+    const templates = globalThis.ConquestData.CARD_TEMPLATES;
+    const template = templates[raw.templateId];
+    const instanceId = Number(raw.instanceId);
+    const power = Number(raw.power);
+    const rewardGold = Number(raw.rewardGold);
+    if (!template || !isFinite(instanceId) || !isFinite(power) || !isFinite(rewardGold)) {
+      return null;
+    }
+
+    const card = {
+      instanceId: instanceId,
+      templateId: template.id,
+      name: typeof raw.name === 'string' && raw.name ? raw.name : template.name,
+      power: power,
+      rewardGold: rewardGold,
+      rank: isFinite(Number(raw.rank)) ? Number(raw.rank) : template.rank,
+    };
+    if (raw.level != null && isFinite(Number(raw.level))) {
+      card.level = Number(raw.level);
+    }
+    globalThis.ConquestData.noteInstanceId(instanceId);
+    return card;
+  }
+
+  /**
+   * 所持にある ID だけを、重複なく、上限まで残す。
+   * @param {Array} raw
+   * @param {object[]} cards
+   * @param {number} [limit]
+   * @returns {number[]}
+   */
+  function restoreIdList(raw, cards, limit) {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const owned = {};
+    cards.forEach(function (card) {
+      owned[card.instanceId] = true;
+    });
+    const ids = [];
+    raw.forEach(function (id) {
+      const numeric = Number(id);
+      if (!owned[numeric] || ids.indexOf(numeric) !== -1) {
+        return;
+      }
+      if (limit != null && ids.length >= limit) {
+        return;
+      }
+      ids.push(numeric);
+    });
+    return ids;
+  }
+
+  /**
+   * セーブ全体を検証して、ゲームが使う state にする。
+   * 1か所でも壊れていれば null。呼び出し側は初期状態へ戻す。
+   *
+   * @param {object} raw
+   * @returns {{ player: object, map: object[][] }|null}
+   */
+  function restoreState(raw) {
+    if (!raw || raw.version !== SAVE_VERSION || !raw.player || !Array.isArray(raw.map)) {
+      return null;
+    }
+    const size = globalThis.ConquestData.MAP_SIZE;
+    if (raw.map.length !== size) {
+      return null;
+    }
+
+    const cards = [];
+    const seen = {};
+    if (!Array.isArray(raw.player.cards) || raw.player.cards.length === 0) {
+      return null;
+    }
+    for (let i = 0; i < raw.player.cards.length; i++) {
+      const card = restoreCard(raw.player.cards[i]);
+      if (!card || seen[card.instanceId]) {
+        return null;
+      }
+      seen[card.instanceId] = true;
+      cards.push(card);
+    }
+
+    const gold = Number(raw.player.gold);
+    if (!isFinite(gold) || gold < 0) {
+      return null;
+    }
+
+    const terrainIds = globalThis.ConquestData.TERRAIN_TABLE.map(function (entry) {
+      return entry.id;
+    });
+    const map = [];
+    for (let row = 0; row < raw.map.length; row++) {
+      const line = raw.map[row];
+      if (!Array.isArray(line) || line.length !== size) {
+        return null;
+      }
+      const restored = [];
+      for (let col = 0; col < line.length; col++) {
+        const cell = line[col];
+        const cellGold = cell && Number(cell.gold);
+        if (!cell || terrainIds.indexOf(cell.terrain) === -1 || !isFinite(cellGold)) {
+          return null;
+        }
+        if (typeof cell.isRevealed !== 'boolean') {
+          return null;
+        }
+        const enemy = cell.enemy == null ? null : restoreCard(cell.enemy);
+        if (cell.enemy != null && !enemy) {
+          return null;
+        }
+        restored.push({
+          gold: cellGold,
+          terrain: cell.terrain,
+          isRevealed: cell.isRevealed,
+          enemy: enemy,
+        });
+      }
+      map.push(restored);
+    }
+
+    return {
+      player: {
+        gold: gold,
+        cards: cards,
+        formationIds: restoreIdList(raw.player.formationIds, cards, FORMATION_SIZE),
+        selectedIds: restoreIdList(raw.player.selectedIds, cards),
+      },
+      map: map,
+    };
+  }
+
+  /**
+   * 保存があれば state を返す。無いか壊れていれば null。例外では止めない。
+   * @returns {{ player: object, map: object[][] }|null}
+   */
+  function loadState() {
+    try {
+      const text = readStorage(SAVE_KEY);
+      if (!text) {
+        return null;
+      }
+      return restoreState(JSON.parse(text));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * いまの進行を書く。所持ゴールド、所持カード、編成、選択、マップを含む。
+   * 書けなかったときは false。ゲーム側の state は変えない。
+   *
+   * @param {{ player: object, map: object[][] }} state
+   * @returns {boolean}
+   */
+  function saveState(state) {
+    try {
+      const payload = {
+        version: SAVE_VERSION,
+        player: {
+          gold: state.player.gold,
+          cards: state.player.cards.map(copyCard),
+          formationIds: (state.player.formationIds || []).slice(),
+          selectedIds: (state.player.selectedIds || []).slice(),
+        },
+        map: state.map.map(function (row) {
+          return row.map(function (cell) {
+            return {
+              gold: cell.gold,
+              terrain: cell.terrain,
+              isRevealed: cell.isRevealed,
+              enemy: cell.enemy ? copyCard(cell.enemy) : null,
+            };
+          });
+        }),
+      };
+      return writeStorage(SAVE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * 保存の成否を、ログとは別の短い一文で出す。空なら隠す。
+   * @param {HTMLElement} root
+   * @param {string} message
+   */
+  function renderSaveNote(root, message) {
+    const note = root.querySelector('[data-region="save-note"]');
+    if (!note) {
+      return;
+    }
+    note.textContent = message || '';
+  }
+
+  /**
    * 初期 state を作り、#app にマップを出す。
+   * 保存があれば、それを初期盤面の代わりに読む。読めなくても新規の盤面で始める。
    * dispatch(row, col) が戦闘、再描画、ログ更新まで行う。
    * evolve(templateId) はゴールドでカードを1枚追加する。
    * select(instanceId) は派遣するカードを切り替える。
-   * reset() は createInitialState で盤面を作り直し、表示を初期状態へ戻す。
+   * save() はいまの進行を localStorage へ書く。
+   * reset() は確認のあと、盤面と保存を消して最初からにする。
    *
    * state は戻り値のプロパティとして持ち、各操作はそこを読む。
    * reset でオブジェクトを差し替えても、dispatch は新しい盤面を使う。
@@ -941,8 +1236,9 @@
       throw new Error('ConquestData が読み込まれていません');
     }
 
+    const loaded = loadState();
     const game = {
-      state: globalThis.ConquestData.createInitialState(),
+      state: loaded || globalThis.ConquestData.createInitialState(),
       renderMap: function () {
         renderMap(root, game.state.map);
       },
@@ -1008,21 +1304,46 @@
         return card;
       },
       /**
-       * 探索状況、所持ゴールド、追加したカード、戦闘ログ、クリア表示を捨てて最初からにする。
-       * カードの初期所持も createInitialState の定義に従う。
+       * いまの進行を localStorage へ書く。失敗しても盤面はそのまま。
+       * @returns {boolean}
+       */
+      save: function () {
+        const saved = saveState(game.state);
+        renderSaveNote(root, saved ? '保存した' : '保存できませんでした');
+        return saved;
+      },
+      /**
+       * 確認のあと、探索状況、所持、編成、戦闘ログ、クリア表示、保存データを捨てる。
+       * キャンセルしたときは何も変えない。
+       * @returns {boolean}
        */
       reset: function () {
+        let confirmed = false;
+        try {
+          confirmed = window.confirm('進行状況を消して、最初からやり直しますか？');
+        } catch (error) {
+          confirmed = false;
+        }
+        if (!confirmed) {
+          return false;
+        }
+        removeStorage(SAVE_KEY);
         game.state = globalThis.ConquestData.createInitialState();
         refreshPlayer(root, game.state.player);
         renderMap(root, game.state.map);
         renderLog(root, '');
         renderClear(root, false);
+        renderSaveNote(root, '');
+        return true;
       },
     };
 
     root.replaceChildren(createBoardElement());
     refreshPlayer(root, game.state.player);
     renderMap(root, game.state.map);
+    if (isMapCleared(game.state.map)) {
+      renderClear(root, true);
+    }
     return game;
   }
 
