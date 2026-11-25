@@ -311,14 +311,15 @@
    * 戦闘ログの一文。先頭で勝敗を出し、獲得と所持を短く続ける。
    * 勝利: Victory! ゴブリンがオークを倒した。+28 Gold（所持: 28）
    * 敗北: Defeated... ゴブリンはオークに敗れた。（所持: 0）
+   * 敵が複数なら、名前を「ゴブリン・ゴブリン」のようにつなぐ。
    *
-   * @param {{ unit: object|object[], enemy: { name: string }, battle: { result: string, rewardGold: number } }} outcome
+   * @param {{ unit: object|object[], enemy: object|object[], battle: { result: string, rewardGold: number } }} outcome
    * @param {{ gold: number }} player
    * @returns {string}
    */
   function formatBattleLog(outcome, player) {
     const unitName = formatUnitName(outcome.unit);
-    const enemyName = outcome.enemy.name;
+    const enemyName = formatUnitName(outcome.enemy);
     const held = '（所持:\u00A0' + player.gold + '）';
 
     if (outcome.battle.result === 'win') {
@@ -898,7 +899,7 @@
 
   /**
    * 1マスへ派遣して戦闘する。
-   * 敵の種類と強さは、そのマスの terrain から決まる。数値は敵専用で、所持カードとは別。
+   * 敵は terrain に応じた1〜3体の編成。戦闘力は合計。数値は敵専用で、所持カードとは別。
    * 探索済みなら何も変えず null を返す。全マス攻略のあとにも戦闘は起こさない。
    * 敗北でもマスはそのままなので、再クリックできる。
    * 勝利時だけ isRevealed を立て、獲得ゴールドを財布へ足す。
@@ -920,7 +921,7 @@
     }
 
     const unit = getDispatchUnit(state.player);
-    const enemy = globalThis.ConquestData.createEnemyForTerrain(cell.terrain);
+    const enemy = globalThis.ConquestData.createEnemyFormation(cell.terrain);
     const battle = globalThis.ConquestData.resolveBattle(unit, enemy, {
       cellGold: cell.gold,
     });
@@ -1000,6 +1001,21 @@
   }
 
   /**
+   * マスに残した敵を保存用に写す。1体の古いデータも、1〜3体の配列も受け取る。
+   * @param {object|object[]|null} enemy
+   * @returns {object|object[]|null}
+   */
+  function copyEnemyUnit(enemy) {
+    if (!enemy) {
+      return null;
+    }
+    if (Array.isArray(enemy)) {
+      return enemy.map(copyCard);
+    }
+    return copyCard(enemy);
+  }
+
+  /**
    * 読み込んだオブジェクトがカードとして使えるなら、新しいオブジェクトにして返す。
    * 未知のテンプレートや壊れた数値は null。通った ID は次の採番へ知らせる。
    *
@@ -1032,6 +1048,34 @@
     }
     globalThis.ConquestData.noteInstanceId(instanceId);
     return card;
+  }
+
+  /**
+   * 保存されていた敵を戻す。配列なら編成、オブジェクトなら以前の1体。
+   * 中身が壊れていれば null。呼び出し側はセーブ全体を読み捨てる。
+   *
+   * @param {object|object[]|null} raw
+   * @returns {object|object[]|null}
+   */
+  function restoreEnemyUnit(raw) {
+    if (raw == null) {
+      return null;
+    }
+    if (Array.isArray(raw)) {
+      if (raw.length < 1 || raw.length > 3) {
+        return null;
+      }
+      const enemies = [];
+      for (let i = 0; i < raw.length; i++) {
+        const card = restoreCard(raw[i]);
+        if (!card) {
+          return null;
+        }
+        enemies.push(card);
+      }
+      return enemies;
+    }
+    return restoreCard(raw);
   }
 
   /**
@@ -1117,7 +1161,7 @@
         if (typeof cell.isRevealed !== 'boolean') {
           return null;
         }
-        const enemy = cell.enemy == null ? null : restoreCard(cell.enemy);
+        const enemy = restoreEnemyUnit(cell.enemy);
         if (cell.enemy != null && !enemy) {
           return null;
         }
@@ -1181,7 +1225,7 @@
               gold: cell.gold,
               terrain: cell.terrain,
               isRevealed: cell.isRevealed,
-              enemy: cell.enemy ? copyCard(cell.enemy) : null,
+              enemy: copyEnemyUnit(cell.enemy),
             };
           });
         }),

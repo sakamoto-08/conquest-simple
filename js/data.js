@@ -65,15 +65,29 @@
   /**
    * マスの地形。weight の合計に対する比率が出現率になる。
    * いまは同率。偏らせるときは weight だけを変える。
-   * enemyTemplateId は、その地形へ派遣したときに出る敵の見た目と名前。
+   * enemyTemplateId は、その地形へ派遣したときに出る基本の敵。
    * enemyPower と enemyRewardGold は敵専用の数値で、CARD_TEMPLATES とは別に持つ。
+   * mixTemplateId は、編成が混成のときに1体だけ混ぜる相手。数値はその種族の地形から取る。
    * プレイヤーが Evolve で得るカードの強さは、ここを変えても変わらない。
    * 色は game.js が id からクラスを付ける。
    */
   const TERRAIN_TABLE = [
-    { id: 'forest', name: '森', weight: 1, enemyTemplateId: 'goblin', enemyPower: 9, enemyRewardGold: 10 },
-    { id: 'wasteland', name: '荒野', weight: 1, enemyTemplateId: 'orc', enemyPower: 20, enemyRewardGold: 22 },
-    { id: 'mountain', name: '山脈', weight: 1, enemyTemplateId: 'dragon', enemyPower: 45, enemyRewardGold: 55 },
+    { id: 'forest', name: '森', weight: 1, enemyTemplateId: 'goblin', enemyPower: 9, enemyRewardGold: 10, mixTemplateId: 'orc' },
+    { id: 'wasteland', name: '荒野', weight: 1, enemyTemplateId: 'orc', enemyPower: 20, enemyRewardGold: 22, mixTemplateId: 'goblin' },
+    { id: 'mountain', name: '山脈', weight: 1, enemyTemplateId: 'dragon', enemyPower: 45, enemyRewardGold: 55, mixTemplateId: 'orc' },
+  ];
+
+  /**
+   * 通常マスの敵編成。weight の合計に対する比率が出現率。
+   * members の 'base' はその地形の基本敵、'mix' は mixTemplateId の敵を1枠にする。
+   * 体数は 1〜3。出し方を変えるときは、この表の行と weight だけを変える。
+   * ボスマスを足すときは、同じ形の別テーブルを createEnemyFormation の第3引数へ渡す。
+   */
+  const ENEMY_FORMATION_TABLE = [
+    { id: 'solo', weight: 55, members: ['base'] },
+    { id: 'pair', weight: 25, members: ['base', 'base'] },
+    { id: 'trio', weight: 15, members: ['base', 'base', 'base'] },
+    { id: 'mixed', weight: 5, members: ['base', 'mix'] },
   ];
 
   /** インスタンスを一意に区別する連番。複数枚所持したときの識別子。 */
@@ -134,30 +148,122 @@
   }
 
   /**
+   * 地形 id から地形の行を取る。無ければ null。
+   * @param {string} terrainId
+   * @returns {object|null}
+   */
+  function findTerrainEntry(terrainId) {
+    for (let i = 0; i < TERRAIN_TABLE.length; i++) {
+      if (TERRAIN_TABLE[i].id === terrainId) {
+        return TERRAIN_TABLE[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 基本敵のテンプレート id から、その数値を持つ地形の行を取る。
+   * 混成の1体は、出た地形ではなく種族側の enemyPower を使う。
+   * @param {string} templateId
+   * @returns {object|null}
+   */
+  function findTerrainByEnemyTemplate(templateId) {
+    for (let i = 0; i < TERRAIN_TABLE.length; i++) {
+      if (TERRAIN_TABLE[i].enemyTemplateId === templateId) {
+        return TERRAIN_TABLE[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 地形の行から敵カードを1枚作る。
+   * 名前はテンプレート、戦闘力と報酬は敵専用の数値。所持カードのマスタは変えない。
+   * @param {object} entry TERRAIN_TABLE の1行
+   * @returns {Card}
+   */
+  function createEnemyFromEntry(entry) {
+    const enemy = createCard(entry.enemyTemplateId);
+    enemy.power = entry.enemyPower;
+    enemy.rewardGold = entry.enemyRewardGold;
+    return enemy;
+  }
+
+  /**
    * 地形に対応する敵カードを1枚作る。
-   * 名前は enemyTemplateId のテンプレートから取り、戦闘力と報酬は地形の敵専用値で上書きする。
-   * 上書きするのはこのインスタンスだけ。CARD_TEMPLATES と所持カードは変えない。
-   * マップ生成時には呼ばない。派遣したタイミングで game.js が呼ぶ。
+   * 編成の各枠はここを通る。マップ生成時には呼ばない。
    *
    * @param {string} terrainId TERRAIN_TABLE の id
    * @returns {Card}
    */
   function createEnemyForTerrain(terrainId) {
-    let entry = null;
-    for (let i = 0; i < TERRAIN_TABLE.length; i++) {
-      if (TERRAIN_TABLE[i].id === terrainId) {
-        entry = TERRAIN_TABLE[i];
-        break;
+    const entry = findTerrainEntry(terrainId);
+    if (!entry || !entry.enemyTemplateId) {
+      throw new Error('地形に対応する敵がありません: ' + terrainId);
+    }
+    return createEnemyFromEntry(entry);
+  }
+
+  /**
+   * weight の合計に対する比率で、表から1行を引く。
+   * 敵編成も地形の出現も、同じ引き方にする。
+   *
+   * @param {Array<{ weight: number }>} table
+   * @param {() => number} [random]
+   * @returns {object}
+   */
+  function pickWeighted(table, random) {
+    const roll = random || Math.random;
+    let totalWeight = 0;
+    for (let i = 0; i < table.length; i++) {
+      totalWeight += table[i].weight;
+    }
+    if (totalWeight <= 0) {
+      throw new Error('抽選表の重みがありません');
+    }
+
+    let cursor = roll() * totalWeight;
+    for (let i = 0; i < table.length; i++) {
+      cursor -= table[i].weight;
+      if (cursor < 0) {
+        return table[i];
       }
     }
+    return table[table.length - 1];
+  }
+
+  /**
+   * 地形に対応する敵編成を作る。戻り値は1〜3体の配列。
+   * 基本は ENEMY_FORMATION_TABLE。ボスマスは第3引数に別表を渡す。
+   * 'base' はその地形の基本敵、'mix' は mixTemplateId の敵。混成先が無いときは基本敵に戻す。
+   * マップ生成時には呼ばない。派遣したタイミングで game.js が呼ぶ。
+   *
+   * @param {string} terrainId
+   * @param {() => number} [random]
+   * @param {Array<{ id: string, weight: number, members: string[] }>} [table]
+   * @returns {Card[]}
+   */
+  function createEnemyFormation(terrainId, random, table) {
+    const entry = findTerrainEntry(terrainId);
     if (!entry || !entry.enemyTemplateId) {
       throw new Error('地形に対応する敵がありません: ' + terrainId);
     }
 
-    const enemy = createCard(entry.enemyTemplateId);
-    enemy.power = entry.enemyPower;
-    enemy.rewardGold = entry.enemyRewardGold;
-    return enemy;
+    const patterns = table || ENEMY_FORMATION_TABLE;
+    const pattern = pickWeighted(patterns, random);
+    if (!pattern.members || pattern.members.length < 1 || pattern.members.length > 3) {
+      throw new Error('敵編成の体数が不正です: ' + pattern.id);
+    }
+
+    const formation = [];
+    for (let i = 0; i < pattern.members.length; i++) {
+      let source = entry;
+      if (pattern.members[i] === 'mix' && entry.mixTemplateId) {
+        source = findTerrainByEnemyTemplate(entry.mixTemplateId) || entry;
+      }
+      formation.push(createEnemyFromEntry(source));
+    }
+    return formation;
   }
 
   /**
@@ -414,6 +520,30 @@
     assert(forestFight.enemyPower === 9, '戦闘は敵専用の戦闘力を使う');
     assert(forestFight.rewardGold === 20, '森の敵報酬10にマスのゴールド10を足す');
 
+    const solo = createEnemyFormation('forest', sequenceRandom([0]));
+    assert(solo.length === 1 && solo[0].templateId === 'goblin' && solo[0].power === 9, '乱数0は表の先頭、森のゴブリン1体');
+    const pair = createEnemyFormation('wasteland', sequenceRandom([0]), [
+      { id: 'pair', weight: 1, members: ['base', 'base'] },
+    ]);
+    assert(pair.length === 2 && pair[0].templateId === 'orc' && pair[1].power === 20, '指定した表ならオーク2体');
+    const trio = createEnemyFormation('mountain', sequenceRandom([0]), [
+      { id: 'trio', weight: 1, members: ['base', 'base', 'base'] },
+    ]);
+    assert(trio.length === 3 && trio.every(function (enemy) {
+      return enemy.templateId === 'dragon' && enemy.power === 45;
+    }), '山脈の3体はドラゴンの敵専用数値');
+    const mixed = createEnemyFormation('forest', sequenceRandom([0]), [
+      { id: 'mixed', weight: 1, members: ['base', 'mix'] },
+    ]);
+    assert(mixed[0].templateId === 'goblin' && mixed[1].templateId === 'orc', '森の混成はゴブリンとオーク');
+    assert(mixed[1].power === 20 && mixed[1].rewardGold === 22, '混成のオークはオークの敵専用数値');
+    const pairFight = resolveBattle(createCard('goblin'), pair, {
+      variance: 0,
+      cellGold: 0,
+      random: Math.random,
+    });
+    assert(pairFight.enemyPower === 40, '敵編成の戦闘力は合計');
+
     const goblin = createCard('goblin');
     const dragon = createCard('dragon');
 
@@ -463,13 +593,15 @@
     }));
 
     const sampleCell = state.map[1][1];
-    sampleCell.enemy = createEnemyForTerrain(sampleCell.terrain);
+    sampleCell.enemy = createEnemyFormation(sampleCell.terrain);
+    const sampleEnemies = Array.isArray(sampleCell.enemy) ? sampleCell.enemy : [sampleCell.enemy];
     const sample = resolveBattle(state.player.cards[0], sampleCell.enemy, {
       cellGold: sampleCell.gold,
     });
     console.log(
       '派遣例: ゴブリン(基準' + state.player.cards[0].power + ') vs ' +
-      sampleCell.enemy.name + '(基準' + sampleCell.enemy.power + ')',
+      sampleEnemies.map(function (enemy) { return enemy.name; }).join('・') +
+      '(合計' + sample.enemyPower + ')',
       sample
     );
     console.log('マスの隠されたゴールド', sampleCell.gold, '/ この戦闘の獲得', sample.rewardGold);
@@ -493,9 +625,11 @@
     MAP_SIZE: MAP_SIZE,
     CARD_TEMPLATES: CARD_TEMPLATES,
     TERRAIN_TABLE: TERRAIN_TABLE,
+    ENEMY_FORMATION_TABLE: ENEMY_FORMATION_TABLE,
     createCard: createCard,
     noteInstanceId: noteInstanceId,
     createEnemyForTerrain: createEnemyForTerrain,
+    createEnemyFormation: createEnemyFormation,
     createPlayer: createPlayer,
     createMap: createMap,
     createInitialState: createInitialState,
