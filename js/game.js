@@ -393,6 +393,7 @@
    * マス1つ分の要素。
    * 未探索は button で "Void"。探索済みは "Claimed" とし、disabled にして再クリックできないようにする。
    * 地形クラスは Void でも Claimed でも付けたままにする。
+   * ボスは is-boss と "Boss" の印を足す。色と枠は CSS が担当する。
    * 未攻略を暗く、攻略済みを明るくする差は CSS が担当する。
    * 行と列は data-row / data-col。クリック位置の特定は main.js が行う。
    *
@@ -409,9 +410,19 @@
     if (TERRAIN_CLASS[cell.terrain]) {
       element.classList.add(TERRAIN_CLASS[cell.terrain]);
     }
+    if (cell.encounter === 'boss') {
+      element.classList.add('is-boss');
+    }
     element.dataset.row = String(row);
     element.dataset.col = String(col);
     element.disabled = cell.isRevealed;
+
+    if (cell.encounter === 'boss') {
+      const badge = document.createElement('span');
+      badge.className = 'map-cell-badge';
+      badge.textContent = 'Boss';
+      element.appendChild(badge);
+    }
 
     const label = document.createElement('span');
     label.className = 'map-cell-label';
@@ -899,7 +910,9 @@
 
   /**
    * 1マスへ派遣して戦闘する。
-   * 敵は terrain に応じた1〜3体の編成。戦闘力は合計。数値は敵専用で、所持カードとは別。
+   * 敵は terrain に応じた1〜3体の編成。ボスはその地形の BOSS_FORMATIONS を使う。
+   * 戦闘力は合計。数値は敵専用で、所持カードとは別。
+   * ボスの goldBonus は、マスのゴールドへ足してから戦闘へ渡す。
    * 探索済みなら何も変えず null を返す。全マス攻略のあとにも戦闘は起こさない。
    * 敗北でもマスはそのままなので、再クリックできる。
    * 勝利時だけ isRevealed を立て、獲得ゴールドを財布へ足す。
@@ -921,9 +934,16 @@
     }
 
     const unit = getDispatchUnit(state.player);
-    const enemy = globalThis.ConquestData.createEnemyFormation(cell.terrain);
+    const bossTable = cell.encounter === 'boss'
+      ? globalThis.ConquestData.BOSS_FORMATIONS[cell.terrain]
+      : null;
+    const enemy = globalThis.ConquestData.createEnemyFormation(
+      cell.terrain,
+      undefined,
+      bossTable || undefined
+    );
     const battle = globalThis.ConquestData.resolveBattle(unit, enemy, {
-      cellGold: cell.gold,
+      cellGold: cell.gold + (cell.goldBonus || 0),
     });
 
     if (battle.result === 'win') {
@@ -1165,11 +1185,23 @@
         if (cell.enemy != null && !enemy) {
           return null;
         }
+        const encounter = typeof cell.encounter === 'string' && cell.encounter
+          ? cell.encounter
+          : 'normal';
+        let goldBonus = 0;
+        if (cell.goldBonus != null) {
+          goldBonus = Number(cell.goldBonus);
+          if (!isFinite(goldBonus) || goldBonus < 0) {
+            return null;
+          }
+        }
         restored.push({
           gold: cellGold,
           terrain: cell.terrain,
           isRevealed: cell.isRevealed,
           enemy: enemy,
+          encounter: encounter,
+          goldBonus: goldBonus,
         });
       }
       map.push(restored);
@@ -1226,6 +1258,8 @@
               terrain: cell.terrain,
               isRevealed: cell.isRevealed,
               enemy: copyEnemyUnit(cell.enemy),
+              encounter: cell.encounter || 'normal',
+              goldBonus: cell.goldBonus || 0,
             };
           });
         }),

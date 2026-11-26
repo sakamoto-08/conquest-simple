@@ -90,6 +90,38 @@
     { id: 'mixed', weight: 5, members: ['base', 'mix'] },
   ];
 
+  /**
+   * ボスマスの数。マップ全体でこの範囲から1つ引く。
+   * 数を変えるときは、この2つだけを変える。
+   */
+  const BOSS_COUNT_MIN = 2;
+  const BOSS_COUNT_MAX = 4;
+
+  /**
+   * ボスを倒したとき、マスのゴールドへ上乗せする額。
+   * 敵編成の報酬とは別に足す。0 にすれば上乗せなし。
+   */
+  const BOSS_GOLD_BONUS = 30;
+
+  /**
+   * 地形ごとのボス編成。通常表より強い並びだけを置く。
+   * weight の合計に対する比率が、その地形のボスの出現率。
+   * 種類を足すときは、地形 id をキーにして行を足す。
+   * members の書き方は ENEMY_FORMATION_TABLE と同じ。
+   */
+  const BOSS_FORMATIONS = {
+    forest: [
+      { id: 'goblin-trio', weight: 1, members: ['base', 'base', 'base'] },
+    ],
+    wasteland: [
+      { id: 'orc-pair', weight: 1, members: ['base', 'base'] },
+    ],
+    mountain: [
+      { id: 'dragon-pair', weight: 1, members: ['base', 'base'] },
+      { id: 'dragon-orc', weight: 1, members: ['base', 'mix'] },
+    ],
+  };
+
   /** インスタンスを一意に区別する連番。複数枚所持したときの識別子。 */
   let nextInstanceId = 1;
 
@@ -310,6 +342,8 @@
   /**
    * 未探索のマスを1つ作る。敵は派遣まで null。
    * terrain は見た目と、派遣時に出す敵の種類に使う。
+   * encounter は 'normal'。ボスにするのは createMap が後から選ぶ。
+   * goldBonus は倒したときにマスのゴールドへ足す額。通常は 0。
    *
    * @param {() => number} [random]
    * @returns {Cell}
@@ -320,11 +354,43 @@
       terrain: pickTerrain(random),
       isRevealed: false,
       enemy: null,
+      encounter: 'normal',
+      goldBonus: 0,
     };
   }
 
   /**
+   * マップから BOSS_COUNT_MIN〜MAX マスをボスにする。
+   * 同じマスは二度選ばない。種類を増やすときは encounter の文字列を足す。
+   *
+   * @param {Cell[][]} map
+   * @param {() => number} [random]
+   */
+  function placeBosses(map, random) {
+    const cells = [];
+    for (let row = 0; row < map.length; row++) {
+      for (let col = 0; col < map[row].length; col++) {
+        cells.push(map[row][col]);
+      }
+    }
+    if (cells.length === 0) {
+      return;
+    }
+
+    const count = Math.min(cells.length, randomInt(BOSS_COUNT_MIN, BOSS_COUNT_MAX, random));
+    for (let i = 0; i < count; i++) {
+      const swap = i + randomInt(0, cells.length - 1 - i, random);
+      const chosen = cells[swap];
+      cells[swap] = cells[i];
+      cells[i] = chosen;
+      chosen.encounter = 'boss';
+      chosen.goldBonus = BOSS_GOLD_BONUS;
+    }
+  }
+
+  /**
    * 一辺 MAP_SIZE のマップ。map[row][col] でマスを取る。
+   * 生成のあと、一部をボスマスにする。
    * @param {number} [size]
    * @param {() => number} [random]
    * @returns {Cell[][]}
@@ -341,6 +407,7 @@
       map.push(line);
     }
 
+    placeBosses(map, random);
     return map;
   }
 
@@ -488,14 +555,22 @@
     const terrainIds = TERRAIN_TABLE.map(function (entry) {
       return entry.id;
     });
+    let bossCount = 0;
     state.map.forEach(function (row) {
       row.forEach(function (cell) {
         assert(cell.gold >= CELL_GOLD_MIN && cell.gold <= CELL_GOLD_MAX, 'ゴールドは10〜50');
         assert(terrainIds.indexOf(cell.terrain) !== -1, '地形は定義済みの種類');
         assert(cell.isRevealed === false, '初期状態は未探索');
         assert(cell.enemy === null, '敵は派遣まで未配置');
+        if (cell.encounter === 'boss') {
+          bossCount += 1;
+          assert(cell.goldBonus === BOSS_GOLD_BONUS, 'ボスはゴールドの上乗せを持つ');
+        } else {
+          assert(cell.encounter === 'normal' && cell.goldBonus === 0, '通常マスに上乗せはない');
+        }
       });
     });
+    assert(bossCount >= BOSS_COUNT_MIN && bossCount <= BOSS_COUNT_MAX, 'ボスは2〜4マス');
 
     const forestCell = createCell(sequenceRandom([0, 0]));
     assert(forestCell.gold === CELL_GOLD_MIN, '乱数0ではゴールド下限');
@@ -543,6 +618,21 @@
       random: Math.random,
     });
     assert(pairFight.enemyPower === 40, '敵編成の戦闘力は合計');
+
+    const forestBoss = createEnemyFormation('forest', sequenceRandom([0]), BOSS_FORMATIONS.forest);
+    assert(forestBoss.length === 3 && forestBoss.every(function (enemy) {
+      return enemy.templateId === 'goblin';
+    }), '森のボスはゴブリン3体');
+    const wastelandBoss = createEnemyFormation('wasteland', sequenceRandom([0]), BOSS_FORMATIONS.wasteland);
+    assert(wastelandBoss.length === 2 && wastelandBoss.every(function (enemy) {
+      return enemy.templateId === 'orc';
+    }), '荒野のボスはオーク2体');
+    const dragonPair = createEnemyFormation('mountain', sequenceRandom([0]), BOSS_FORMATIONS.mountain);
+    assert(dragonPair.length === 2 && dragonPair.every(function (enemy) {
+      return enemy.templateId === 'dragon';
+    }), '乱数0の山脈ボスはドラゴン2体');
+    const dragonOrc = createEnemyFormation('mountain', sequenceRandom([0.6]), BOSS_FORMATIONS.mountain);
+    assert(dragonOrc[0].templateId === 'dragon' && dragonOrc[1].templateId === 'orc', 'もう一方の山脈ボスはドラゴンとオーク');
 
     const goblin = createCard('goblin');
     const dragon = createCard('dragon');
@@ -626,6 +716,10 @@
     CARD_TEMPLATES: CARD_TEMPLATES,
     TERRAIN_TABLE: TERRAIN_TABLE,
     ENEMY_FORMATION_TABLE: ENEMY_FORMATION_TABLE,
+    BOSS_FORMATIONS: BOSS_FORMATIONS,
+    BOSS_COUNT_MIN: BOSS_COUNT_MIN,
+    BOSS_COUNT_MAX: BOSS_COUNT_MAX,
+    BOSS_GOLD_BONUS: BOSS_GOLD_BONUS,
     createCard: createCard,
     noteInstanceId: noteInstanceId,
     createEnemyForTerrain: createEnemyForTerrain,
