@@ -8,8 +8,9 @@
  * 進行は localStorage へ手動で保存し、次に開いたとき保存があれば読み込む。
  *
  * 戦闘に出すカードは getDispatchUnit() だけが決める。
- * 編成 formationIds に1枚以上あれば、その並びの合計戦闘力で戦う。
- * 編成が空なら、所持一覧で選んだ1枚で戦う。
+ * 編成 formationIds に1枚以上あれば、その並びで戦う。
+ * 戦闘力は formationPower() のボーナス後。1枚はそのまま、2枚は +10%、3枚は +20%。
+ * 編成が空なら、所持一覧で選んだ1枚で戦う。1枚なのでボーナスは付かない。
  * 未選択のときだけ、power が一番高い1枚を選んでおく。
  * 選択は player.selectedIds、編成は player.formationIds。どちらも instanceId の配列。
  * 編成の添字が枠の位置。効果や並べ順のボーナスは、この並びを読めば足せる。
@@ -39,9 +40,21 @@
 
   /**
    * 編成に同時に入れられる枚数。
-   * 枠を増やすときはこの数だけを変える。戦闘は formationIds の合計を見る。
+   * 枠を増やすときはこの数を変え、枚数ボーナスも FORMATION_POWER_BONUS に足す。
    */
   const FORMATION_SIZE = 3;
+
+  /**
+   * 編成枚数ごとの戦闘力倍率。合計Powerにこの倍率を掛ける。
+   * 1枚は 1（ボーナスなし）。2枚は 1.1（+10%）。3枚は 1.2（+20%）。
+   * 率を変えるとき、枠を増やしたときは、この表だけを直す。
+   * 表に無い枚数は 1 として扱い、ボーナスは付かない。
+   */
+  const FORMATION_POWER_BONUS = {
+    1: 1,
+    2: 1.1,
+    3: 1.2,
+  };
 
   /**
    * ブラウザに残すセーブのキーと版。
@@ -196,6 +209,48 @@
   }
 
   /**
+   * 編成の戦闘力。表示と戦闘が同じ値を使う。
+   * 基準はカード power の合計。倍率は FORMATION_POWER_BONUS の枚数。
+   * ボーナス後は四捨五入して整数にする。小数のまま戦闘へ渡さない。
+   * 0枚や表に無い枚数は倍率 1。power は基準の合計のまま。
+   *
+   * @param {object[]} cards
+   * @returns {{ count: number, basePower: number, power: number, rate: number, percent: number }}
+   */
+  function formationPower(cards) {
+    const list = cards || [];
+    const rate = Object.prototype.hasOwnProperty.call(FORMATION_POWER_BONUS, list.length)
+      ? FORMATION_POWER_BONUS[list.length]
+      : 1;
+    const basePower = list.reduce(function (sum, card) {
+      return sum + card.power;
+    }, 0);
+    return {
+      count: list.length,
+      basePower: basePower,
+      power: Math.round(basePower * rate),
+      rate: rate,
+      percent: Math.round((rate - 1) * 100),
+    };
+  }
+
+  /**
+   * 編成欄の合計。ボーナスが無いときは「編成 Power: 10」。
+   * 2枚以上で倍率が 1 を超えるときは「編成 Power: 70 → 84 (+20%)」。
+   * 矢印の左が合計、右が戦闘に使う値。
+   *
+   * @param {{ basePower: number, power: number, percent: number }} summary
+   * @returns {string}
+   */
+  function formatFormationPower(summary) {
+    if (summary.percent > 0) {
+      return '編成 Power: ' + summary.basePower + ' → ' + summary.power +
+        ' (+' + summary.percent + '%)';
+    }
+    return '編成 Power: ' + summary.basePower;
+  }
+
+  /**
    * そのカードが、選択中の1枚か。
    * @param {{ selectedIds?: number[] }} player
    * @param {{ instanceId: number }} card
@@ -311,14 +366,17 @@
    * 戦闘ログの一文。先頭で勝敗を出し、獲得と所持を短く続ける。
    * 勝利: Victory! ゴブリンがオークを倒した。+28 Gold（所持: 28）
    * 敗北: Defeated... ゴブリンはオークに敗れた。（所持: 0）
+   * 2枚以上でボーナスがあるときは、名前のあとに「（編成 +10%）」を足す。
    * 敵が複数なら、名前を「ゴブリン・ゴブリン」のようにつなぐ。
    *
-   * @param {{ unit: object|object[], enemy: object|object[], battle: { result: string, rewardGold: number } }} outcome
+   * @param {{ unit: object|object[], enemy: object|object[], battle: { result: string, rewardGold: number }, formationBonus?: { percent: number } }} outcome
    * @param {{ gold: number }} player
    * @returns {string}
    */
   function formatBattleLog(outcome, player) {
-    const unitName = formatUnitName(outcome.unit);
+    const bonus = outcome.formationBonus;
+    const bonusNote = bonus && bonus.percent > 0 ? '（編成 +' + bonus.percent + '%）' : '';
+    const unitName = formatUnitName(outcome.unit) + bonusNote;
     const enemyName = formatUnitName(outcome.enemy);
     const held = '（所持:\u00A0' + player.gold + '）';
 
@@ -612,9 +670,9 @@
   /**
    * 所持ゴールドと、いま派遣できるカードを出す。
    * 名前は formatUnitName、出すユニットは getDispatchUnit に任せる。
-   * 戦闘力は、派遣カードが1枚ならその power。配列なら合計。
+   * 戦闘力は formationPower のボーナス後。1枚ならその power。
    * 例: 派遣: オーク (Power 20)　所持ゴールド 70
-   * 編成が2枚以上なら名前を「・」でつなぎ、戦闘力は合計になる。
+   * 編成が2枚以上なら名前を「・」でつなぎ、ボーナスがあるときは +10% のように出す。
    *
    * @param {HTMLElement} root
    * @param {{ gold: number, cards: object[], formation?: object[] }} player
@@ -627,18 +685,18 @@
 
     const unit = getDispatchUnit(player);
     const cards = Array.isArray(unit) ? unit : [unit];
-    const power = cards.reduce(function (sum, card) {
-      return sum + card.power;
-    }, 0);
+    const summary = formationPower(cards);
+    const bonusNote = summary.percent > 0 ? ' +' + summary.percent + '%' : '';
 
     statusHost.textContent =
-      '派遣: ' + formatUnitName(unit) + ' (Power ' + power + ')　所持ゴールド ' + player.gold;
+      '派遣: ' + formatUnitName(unit) + ' (Power ' + summary.power + bonusNote + ')　所持ゴールド ' + player.gold;
   }
 
   /**
    * 編成枠を左から FORMATION_SIZE 個描く。空きは「空」。
    * 入っている枠には名前と Power を出し、押すとそのカードを外す。
-   * 合計は編成中の power だけを足す。未編成なら 0。選択中の1枚は含めない。
+   * 合計は編成中の power だけ。未編成なら 0。選択中の1枚は含めない。
+   * 2枚以上でボーナスがあるときは「70 → 84 (+20%)」と、戦闘に使う値も出す。
    * 入れ外しのあとは refreshPlayer からここが呼ばれ、枠と合計が同時に更新される。
    * 並びは formationIds の順。効果を足すときもこの順が枠の位置になる。
    *
@@ -654,10 +712,7 @@
     }
 
     const formed = formationCards(player);
-    const formedPower = formed.reduce(function (sum, card) {
-      return sum + card.power;
-    }, 0);
-    total.textContent = '編成 Power: ' + formedPower;
+    total.textContent = formatFormationPower(formationPower(formed));
 
     slots.replaceChildren();
     for (let i = 0; i < FORMATION_SIZE; i++) {
@@ -911,7 +966,8 @@
   /**
    * 1マスへ派遣して戦闘する。
    * 敵は terrain に応じた1〜3体の編成。ボスはその地形の BOSS_FORMATIONS を使う。
-   * 戦闘力は合計。数値は敵専用で、所持カードとは別。
+   * プレイヤーの戦闘力は formationPower のボーナス後。敵は合計のまま。
+   * 数値は敵専用で、所持カードとは別。所持カードの power はここでは変えない。
    * ボスの goldBonus は、マスのゴールドへ足してから戦闘へ渡す。
    * 探索済みなら何も変えず null を返す。全マス攻略のあとにも戦闘は起こさない。
    * 敗北でもマスはそのままなので、再クリックできる。
@@ -934,6 +990,8 @@
     }
 
     const unit = getDispatchUnit(state.player);
+    const dispatchCards = Array.isArray(unit) ? unit : [unit];
+    const formationBonus = formationPower(dispatchCards);
     const bossTable = cell.encounter === 'boss'
       ? globalThis.ConquestData.BOSS_FORMATIONS[cell.terrain]
       : null;
@@ -944,6 +1002,7 @@
     );
     const battle = globalThis.ConquestData.resolveBattle(unit, enemy, {
       cellGold: cell.gold + (cell.goldBonus || 0),
+      playerPower: formationBonus.power,
     });
 
     if (battle.result === 'win') {
@@ -957,6 +1016,7 @@
       enemy: enemy,
       battle: battle,
       cell: cell,
+      formationBonus: formationBonus,
     };
   }
 

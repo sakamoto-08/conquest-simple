@@ -443,8 +443,9 @@
   }
 
   /**
-   * 編成の基準戦闘力。現在は単純な合計。
-   * 陣形ボーナスを入れるときはこの関数だけを変える。
+   * カード power の合計。敵の戦闘力は常にこの値。
+   * プレイヤーの枚数ボーナスは game.js の formationPower が計算し、
+   * resolveBattle の playerPower として渡す。ここには掛けない。
    * @param {Card[]} cards
    * @returns {number}
    */
@@ -488,11 +489,13 @@
    * 敗北時は 0。マスのゴールドは勝利するまで手に入らない。
    *
    * cellGold は第3引数のオプション。省略時は 0 で、敵報酬だけを返す。
+   * playerPower を渡したときは、その値をプレイヤー側の基準にする。
+   * 編成ボーナスは呼び出し側が整数で渡し、ここは比較だけを行う。省略時は合計。
    * unit はカード1枚でもカード配列でもよい。
    *
    * @param {Card|Card[]} playerUnit
    * @param {Card|Card[]} enemyUnit
-   * @param {{ cellGold?: number, variance?: number, random?: () => number }} [options]
+   * @param {{ cellGold?: number, playerPower?: number, variance?: number, random?: () => number }} [options]
    * @returns {BattleResult}
    */
   function resolveBattle(playerUnit, enemyUnit, options) {
@@ -503,7 +506,9 @@
 
     const playerCards = toCardList(playerUnit);
     const enemyCards = toCardList(enemyUnit);
-    const playerPower = sumPower(playerCards);
+    const playerPower = Number.isFinite(settings.playerPower)
+      ? settings.playerPower
+      : sumPower(playerCards);
     const enemyPower = sumPower(enemyCards);
     const playerRoll = rollPower(playerPower, variance, random);
     const enemyRoll = rollPower(enemyPower, variance, random);
@@ -671,6 +676,16 @@
     assert(formation.playerPower === 50, '編成の戦闘力は合計');
     assert(formation.result === 'win', '編成が基準戦闘力で上回れば勝利');
     assert(formation.rewardGold === dragon.rewardGold + 10, '編成戦でも報酬の式は同じ');
+
+    const boosted = resolveBattle([dragon, goblin], dragon, {
+      variance: 0,
+      cellGold: 0,
+      playerPower: 55,
+      random: Math.random,
+    });
+    assert(boosted.playerPower === 55, 'playerPower を渡すとその値で戦う');
+    assert(boosted.enemyPower === dragon.power, '敵の戦闘力は渡した値では変わらない');
+    assert(boosted.playerRoll === 55, 'ロールの基準は渡した戦闘力');
 
     console.log('--- ConquestData セルフテスト: 成功 ---');
     console.log('テンプレート', CARD_TEMPLATES);
